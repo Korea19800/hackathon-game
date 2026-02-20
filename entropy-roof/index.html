@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entropy Roof — Physics Defense Puzzle</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+canvas { display: block; cursor: crosshair; }
+#ui {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; font-family: 'Courier New', monospace; color: #fff;
+}
+#hud {
+  position: absolute; top: 20px; left: 20px; right: 20px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+#hud-left, #hud-right { display: flex; flex-direction: column; gap: 6px; }
+.hud-label { font-size: 11px; opacity: 0.5; letter-spacing: 2px; text-transform: uppercase; }
+.hud-value { font-size: 22px; font-weight: bold; }
+.hud-value.red { color: #ff4466; text-shadow: 0 0 12px #ff4466; }
+.hud-value.cyan { color: #00ffff; text-shadow: 0 0 12px #00ffff; }
+.hud-value.gold { color: #ffd700; text-shadow: 0 0 12px #ffd700; }
+#level-label {
+  position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; opacity: 0.4; letter-spacing: 2px;
+}
+#state-indicator {
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  font-size: 14px; letter-spacing: 4px; text-transform: uppercase;
+  padding: 6px 18px; border: 1px solid; border-radius: 4px;
+  transition: all 0.3s;
+}
+#state-indicator.forward { color: #ff4466; border-color: #ff446644; text-shadow: 0 0 10px #ff4466; }
+#state-indicator.reverse { color: #00ffff; border-color: #00ffff44; text-shadow: 0 0 10px #00ffff; }
+#line-count {
+  position: absolute; bottom: 20px; right: 20px;
+  font-size: 12px; opacity: 0.6;
+}
+#overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(5, 5, 16, 0.88); transition: opacity 0.5s;
+}
+#overlay.hidden { opacity: 0; pointer-events: none; }
+#overlay h1 { font-size: 48px; margin-bottom: 10px; letter-spacing: 6px; }
+#overlay h1.title { color: #ffd700; text-shadow: 0 0 30px #ffd700; }
+#overlay h1.win { color: #00ffff; text-shadow: 0 0 30px #00ffff; }
+#overlay h1.lose { color: #ff4466; text-shadow: 0 0 30px #ff4466; }
+#overlay p { font-size: 16px; opacity: 0.7; margin-bottom: 24px; }
+#overlay .sub { font-size: 13px; opacity: 0.4; margin-top: 8px; }
+.btn {
+  pointer-events: all; cursor: pointer;
+  font-family: 'Courier New', monospace; font-size: 15px;
+  padding: 10px 30px; background: transparent; color: #fff;
+  border: 1px solid #ffffff44; border-radius: 4px; letter-spacing: 3px;
+  transition: all 0.3s; margin: 4px;
+}
+.btn:hover { background: #ffffff11; border-color: #fff; }
+#level-select {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  margin-top: 10px; pointer-events: all;
+}
+.level-btn {
+  pointer-events: all; cursor: pointer;
+  font-family: 'Courier New', monospace; font-size: 14px;
+  width: 320px; padding: 12px 20px; background: rgba(255,255,255,0.03);
+  color: #fff; border: 1px solid #ffffff22; border-radius: 4px;
+  letter-spacing: 2px; transition: all 0.3s; text-align: left;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.level-btn:hover { background: rgba(255,255,255,0.08); border-color: #fff; }
+.level-btn.locked { opacity: 0.25; cursor: default; }
+.level-btn.locked:hover { background: rgba(255,255,255,0.03); border-color: #ffffff22; }
+.level-btn .lname { flex: 1; }
+.level-btn .lstars { color: #ffd700; font-size: 12px; letter-spacing: 1px; }
+.level-btn .ltag {
+  font-size: 10px; padding: 2px 8px; border-radius: 3px;
+  margin-left: 10px; letter-spacing: 1px;
+}
+.ltag.easy { color: #44ff88; border: 1px solid #44ff8844; }
+.ltag.medium { color: #ffd700; border: 1px solid #ffd70044; }
+.ltag.hard { color: #ff8844; border: 1px solid #ff884444; }
+.ltag.extreme { color: #ff4466; border: 1px solid #ff446644; }
+#instructions {
+  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; opacity: 0.35; letter-spacing: 1px; text-align: center;
+  line-height: 1.6;
+}
+#btn-row { display: flex; gap: 8px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div id="hud-left">
+      <div><span class="hud-label">House HP</span><br><span class="hud-value red" id="hp-val">100</span></div>
+    </div>
+    <div id="hud-right">
+      <div style="text-align:right"><span class="hud-label">Time</span><br><span class="hud-value gold" id="time-val">30.0</span></div>
+    </div>
+  </div>
+  <div id="state-indicator" class="forward">▶ FORWARD</div>
+  <div id="level-label"></div>
+  <div id="line-count">Lines: <span id="lc">0</span> / 5</div>
+  <div id="instructions">DRAG to draw roof segments &nbsp;|&nbsp; R to remove oldest line &nbsp;|&nbsp; Beware random gravity reversals!</div>
+  <div id="overlay">
+    <h1 id="overlay-title" class="title">ENTROPY ROOF</h1>
+    <p id="overlay-desc">Draw roofs to protect your house from the rain of entropy</p>
+    <div id="level-select"></div>
+    <div id="btn-row">
+      <button class="btn" id="btn-next" style="display:none">NEXT LEVEL ▶</button>
+      <button class="btn" id="btn-retry" style="display:none">RETRY</button>
+      <button class="btn" id="btn-menu" style="display:none">MENU</button>
+    </div>
+    <div class="sub" id="overlay-sub">Gravity will reverse randomly — build roofs for both directions!</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Level definitions ───
+const LEVELS = [
+  {
+    name: "Drizzle",
+    tag: "EASY", tagClass: "easy",
+    desc: "A gentle rain. Learn to draw roofs.",
+    duration: 25,
+    spawnRate: 40,
+    spawnAccel: 2,
+    maxLines: 7,
+    houseHP: 100,
+    gravity: 320,
+    particleRadius: 2.5,
+    revIntervalMin: 0, revIntervalMax: 0,
+    revDurationMin: 0, revDurationMax: 0,
+    windAmp: 0,
+  },
+  {
+    name: "Downpour",
+    tag: "EASY", tagClass: "easy",
+    desc: "Heavier rain. Gravity sometimes reverses!",
+    duration: 28,
+    spawnRate: 65,
+    spawnAccel: 4,
+    maxLines: 6,
+    houseHP: 100,
+    gravity: 380,
+    particleRadius: 2.5,
+    revIntervalMin: 12, revIntervalMax: 18,
+    revDurationMin: 3, revDurationMax: 5,
+    windAmp: 0,
+  },
+  {
+    name: "Monsoon",
+    tag: "MEDIUM", tagClass: "medium",
+    desc: "Frequent reversals. Fewer roofs allowed.",
+    duration: 30,
+    spawnRate: 90,
+    spawnAccel: 6,
+    maxLines: 5,
+    houseHP: 90,
+    gravity: 440,
+    particleRadius: 2.8,
+    revIntervalMin: 8, revIntervalMax: 14,
+    revDurationMin: 3, revDurationMax: 6,
+    windAmp: 0,
+  },
+  {
+    name: "Typhoon",
+    tag: "HARD", tagClass: "hard",
+    desc: "Wind and rapid gravity flips tear at your defenses.",
+    duration: 32,
+    spawnRate: 110,
+    spawnAccel: 8,
+    maxLines: 4,
+    houseHP: 80,
+    gravity: 500,
+    particleRadius: 3.0,
+    revIntervalMin: 5, revIntervalMax: 9,
+    revDurationMin: 3, revDurationMax: 6,
+    windAmp: 80,
+  },
+  {
+    name: "Entropy Storm",
+    tag: "EXTREME", tagClass: "extreme",
+    desc: "Reality collapses. Constant chaos.",
+    duration: 35,
+    spawnRate: 140,
+    spawnAccel: 12,
+    maxLines: 3,
+    houseHP: 60,
+    gravity: 560,
+    particleRadius: 3.2,
+    revIntervalMin: 3, revIntervalMax: 6,
+    revDurationMin: 3, revDurationMax: 7,
+    windAmp: 140,
+  },
+];
+
+const MAX_PARTICLES = 1400;
+const FRICTION = 0.25;
+const RESTITUTION = 0.15;
+const HOUSE_RADIUS = 30;
+
+// ─── Persistent progress ───
+let unlockedLevel = 0;
+let levelStars = new Array(LEVELS.length).fill(0);
+try {
+  const saved = JSON.parse(localStorage.getItem('entropy-roof-progress'));
+  if (saved) { unlockedLevel = saved.u || 0; levelStars = saved.s || levelStars; }
+} catch(e) {}
+function saveProgress() {
+  try { localStorage.setItem('entropy-roof-progress', JSON.stringify({ u: unlockedLevel, s: levelStars })); } catch(e) {}
+}
+
+// ─── DOM refs ───
+const hpVal = document.getElementById('hp-val');
+const timeVal = document.getElementById('time-val');
+const stateInd = document.getElementById('state-indicator');
+const levelLabel = document.getElementById('level-label');
+const lcSpan = document.getElementById('lc');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayDesc = document.getElementById('overlay-desc');
+const overlaySub = document.getElementById('overlay-sub');
+const levelSelectDiv = document.getElementById('level-select');
+const btnNext = document.getElementById('btn-next');
+const btnRetry = document.getElementById('btn-retry');
+const btnMenu = document.getElementById('btn-menu');
+const lineCountDiv = document.getElementById('line-count');
+
+// ─── Vec2 helpers ───
+function v2(x, y) { return { x, y }; }
+function v2sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
+function v2scale(v, s) { return { x: v.x * s, y: v.y * s }; }
+function v2dot(a, b) { return a.x * b.x + a.y * b.y; }
+function v2len(v) { return Math.sqrt(v.x * v.x + v.y * v.y); }
+
+// ─── Game state ───
+let gameState = 'menu';
+let currentLevel = 0;
+let lvl = LEVELS[0];
+let reversed = false;
+let houseHP, elapsed, spawnAccum;
+let particles = [];
+let lines = [];
+let drawStart = null;
+let drawEnd = null;
+let flashTimer = 0;
+let glitchIntensity = 0;
+
+// Random reverse scheduling
+let nextReverseAt = 0;   // elapsed time when next reverse triggers
+let reverseEndAt = 0;    // elapsed time when current reverse ends
+let reverseWarning = false;
+const REV_WARN_TIME = 1.2;
+
+function randRange(min, max) { return min + Math.random() * (max - min); }
+
+function scheduleNextReverse() {
+  if (lvl.revIntervalMin <= 0) { nextReverseAt = Infinity; return; }
+  nextReverseAt = elapsed + randRange(lvl.revIntervalMin, lvl.revIntervalMax);
+}
+
+function triggerReverse() {
+  reversed = true;
+  reverseWarning = false;
+  glitchIntensity = 1.0;
+  const dur = randRange(lvl.revDurationMin, lvl.revDurationMax);
+  reverseEndAt = elapsed + dur;
+  stateInd.className = 'reverse';
+  stateInd.textContent = '◀ REVERSE';
+}
+
+function endReverse() {
+  reversed = false;
+  glitchIntensity = 1.0;
+  stateInd.className = 'forward';
+  stateInd.textContent = '▶ FORWARD';
+  scheduleNextReverse();
+}
+
+function houseX() { return W / 2; }
+function houseY() { return H - 80; }
+
+// ─── Menu ───
+function showMenu() {
+  gameState = 'menu';
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'ENTROPY ROOF';
+  overlayTitle.className = 'title';
+  overlayDesc.textContent = 'Draw roofs to protect your house from the rain of entropy';
+  overlaySub.textContent = 'Gravity will reverse randomly — build roofs for both directions!';
+  btnNext.style.display = 'none';
+  btnRetry.style.display = 'none';
+  btnMenu.style.display = 'none';
+  buildLevelSelect();
+}
+
+function buildLevelSelect() {
+  levelSelectDiv.innerHTML = '';
+  for (let i = 0; i < LEVELS.length; i++) {
+    const l = LEVELS[i];
+    const locked = i > unlockedLevel;
+    const btn = document.createElement('button');
+    btn.className = 'level-btn' + (locked ? ' locked' : '');
+    const stars = levelStars[i];
+    const starStr = stars > 0 ? ('★'.repeat(stars) + '☆'.repeat(3 - stars)) : '';
+    btn.innerHTML = `<span class="lname">${i + 1}. ${l.name}</span>`
+      + (starStr ? `<span class="lstars">${starStr}</span>` : '')
+      + `<span class="ltag ${l.tagClass}">${l.tag}</span>`;
+    if (!locked) {
+      btn.addEventListener('click', () => startLevel(i));
+    }
+    levelSelectDiv.appendChild(btn);
+  }
+}
+
+// ─── Start level ───
+function startLevel(idx) {
+  currentLevel = idx;
+  lvl = LEVELS[idx];
+  reversed = false;
+  houseHP = lvl.houseHP;
+  elapsed = 0;
+  spawnAccum = 0;
+  reverseWarning = false;
+  reverseEndAt = 0;
+  particles = [];
+  lines = [];
+  drawStart = null;
+  drawEnd = null;
+  flashTimer = 0;
+  glitchIntensity = 0;
+  gameState = 'playing';
+  scheduleNextReverse();
+  overlay.classList.add('hidden');
+  levelSelectDiv.innerHTML = '';
+  stateInd.className = 'forward';
+  stateInd.textContent = '▶ FORWARD';
+  levelLabel.textContent = `Lv.${idx + 1} ${lvl.name}`;
+  lineCountDiv.innerHTML = `Lines: <span id="lc">0</span> / ${lvl.maxLines}`;
+  updateHUD();
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function updateHUD() {
+  const hp = Math.max(0, houseHP);
+  hpVal.textContent = hp;
+  const remain = Math.max(0, lvl.duration - elapsed);
+  timeVal.textContent = remain.toFixed(1);
+  const lcEl = document.getElementById('lc');
+  if (lcEl) lcEl.textContent = lines.length;
+}
+
+// ─── Particle pool ───
+function spawnParticle() {
+  if (particles.length >= MAX_PARTICLES) return;
+  const spread = W * 1.1;
+  const offX = (W - spread) / 2;
+  const r = lvl.particleRadius * (0.7 + Math.random() * 0.6);
+  if (!reversed) {
+    particles.push({
+      x: offX + Math.random() * spread,
+      y: -10 - Math.random() * 40,
+      vx: (Math.random() - 0.5) * 30,
+      vy: 40 + Math.random() * 60,
+      r, alive: true
+    });
+  } else {
+    particles.push({
+      x: offX + Math.random() * spread,
+      y: H + 10 + Math.random() * 40,
+      vx: (Math.random() - 0.5) * 30,
+      vy: -(40 + Math.random() * 60),
+      r, alive: true
+    });
+  }
+}
+
+// ─── Collision helpers ───
+function closestPointOnSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 0.01) return { x: ax, y: ay, t: 0 };
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return { x: ax + t * dx, y: ay + t * dy, t };
+}
+
+function segSegIntersect(p0x, p0y, p1x, p1y, q0x, q0y, q1x, q1y) {
+  const dx = p1x - p0x, dy = p1y - p0y;
+  const ex = q1x - q0x, ey = q1y - q0y;
+  const denom = dx * ey - dy * ex;
+  if (Math.abs(denom) < 1e-10) return -1;
+  const t = ((q0x - p0x) * ey - (q0y - p0y) * ex) / denom;
+  const u = ((q0x - p0x) * dy - (q0y - p0y) * dx) / denom;
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return t;
+  return -1;
+}
+
+function collideParticleLine(p, seg, subDt, prevX, prevY) {
+  const ax = seg.ax, ay = seg.ay, bx = seg.bx, by = seg.by;
+  const edx = bx - ax, edy = by - ay;
+  const eLen = Math.sqrt(edx * edx + edy * edy);
+  if (eLen < 1) return;
+
+  const eux = edx / eLen, euy = edy / eLen;
+  const enx = -euy, eny = eux;
+  const r = p.r + 3;
+
+  let respNx, respNy, collided = false;
+
+  const cp = closestPointOnSeg(p.x, p.y, ax, ay, bx, by);
+  const cdx = p.x - cp.x, cdy = p.y - cp.y;
+  const cDist = Math.sqrt(cdx * cdx + cdy * cdy);
+
+  if (cDist < r) {
+    collided = true;
+    if (cDist > 0.001) {
+      respNx = cdx / cDist; respNy = cdy / cDist;
+    } else {
+      const prevSigned = (prevX - ax) * enx + (prevY - ay) * eny;
+      const s = prevSigned >= 0 ? 1 : -1;
+      respNx = enx * s; respNy = eny * s;
+    }
+  }
+
+  if (!collided) {
+    const tHit = segSegIntersect(prevX, prevY, p.x, p.y, ax, ay, bx, by);
+    if (tHit >= 0) {
+      collided = true;
+      const prevSigned = (prevX - ax) * enx + (prevY - ay) * eny;
+      const s = prevSigned >= 0 ? 1 : -1;
+      respNx = enx * s; respNy = eny * s;
+      const hitX = prevX + (p.x - prevX) * tHit;
+      const hitY = prevY + (p.y - prevY) * tHit;
+      p.x = hitX + respNx * r;
+      p.y = hitY + respNy * r;
+    }
+  }
+
+  if (!collided) return;
+
+  const vDotN = p.vx * respNx + p.vy * respNy;
+  if (vDotN >= 0) return;
+
+  const vtx = p.vx - respNx * vDotN;
+  const vty = p.vy - respNy * vDotN;
+
+  const fricMul = Math.max(0, 1.0 - FRICTION * 6);
+  p.vx = vtx * fricMul + respNx * (-vDotN * RESTITUTION);
+  p.vy = vty * fricMul + respNy * (-vDotN * RESTITUTION);
+
+  const slopeGrav = reversed ? -lvl.gravity : lvl.gravity;
+  const gravProj = slopeGrav * euy;
+  p.vx += eux * gravProj * subDt;
+  p.vy += euy * gravProj * subDt;
+
+  if (cDist < r && cDist > 0.001) {
+    p.x += respNx * (r - cDist + 0.5);
+    p.y += respNy * (r - cDist + 0.5);
+  }
+}
+
+// ─── Collision: particle vs house (AABB around house shape) ───
+function collideParticleHouse(p) {
+  const cx = houseX(), cy = houseY();
+  const s = HOUSE_RADIUS;
+  const wallW = s * 1.3, wallH = s * 0.9;
+  const roofPeakY = cy - s * 1.2;
+  const roofBaseY = cy - s * 0.3;
+
+  const inWall = p.x > cx - wallW && p.x < cx + wallW
+    && p.y > roofBaseY && p.y < cy + wallH * 0.6;
+
+  let inRoof = false;
+  if (p.y >= roofPeakY && p.y <= roofBaseY) {
+    const frac = (p.y - roofPeakY) / (roofBaseY - roofPeakY);
+    const halfW = frac * (wallW + 4);
+    inRoof = p.x > cx - halfW && p.x < cx + halfW;
+  }
+
+  if (inWall || inRoof) {
+    p.alive = false;
+    houseHP--;
+    flashTimer = 0.08;
+    return true;
+  }
+  return false;
+}
+
+// ─── Physics ───
+const SUBSTEPS = 3;
+
+function updatePhysics(dt) {
+  const spawnRate = lvl.spawnRate + elapsed * lvl.spawnAccel;
+  spawnAccum += spawnRate * dt;
+  while (spawnAccum >= 1) { spawnParticle(); spawnAccum -= 1; }
+
+  // Random reverse events
+  if (!reversed && nextReverseAt < Infinity) {
+    if (elapsed >= nextReverseAt) {
+      triggerReverse();
+    } else if (elapsed >= nextReverseAt - REV_WARN_TIME) {
+      reverseWarning = true;
+    }
+  }
+  if (reversed && elapsed >= reverseEndAt) {
+    endReverse();
+  }
+
+  const subDt = dt / SUBSTEPS;
+  const grav = reversed ? -lvl.gravity : lvl.gravity;
+  const windForce = lvl.windAmp > 0 ? Math.sin(elapsed * 1.2) * lvl.windAmp : 0;
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+
+    for (let s = 0; s < SUBSTEPS; s++) {
+      p.vy += grav * subDt;
+      p.vx += windForce * subDt;
+      p.vx *= (1 - 0.02 * subDt);
+
+      const prevX = p.x;
+      const prevY = p.y;
+      p.x += p.vx * subDt;
+      p.y += p.vy * subDt;
+
+      for (let j = 0; j < lines.length; j++) {
+        collideParticleLine(p, lines[j], subDt, prevX, prevY);
+      }
+    }
+
+    collideParticleHouse(p);
+
+    const margin = 60;
+    if (p.x < -margin || p.x > W + margin || p.y < -margin || p.y > H + margin) {
+      p.alive = false;
+    }
+
+    if (!p.alive) {
+      particles[i] = particles[particles.length - 1];
+      particles.pop();
+    }
+  }
+}
+
+// ─── Drawing ───
+function drawTrailBg() {
+  ctx.fillStyle = 'rgba(5, 5, 16, 0.18)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawParticles() {
+  const baseColor = reversed ? [0, 255, 255] : [255, 68, 102];
+  const glowColor = reversed ? '#00ffff' : '#ff4466';
+  ctx.shadowBlur = 8;
+  ctx.shadowColor = glowColor;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    const alpha = Math.min(1, 0.4 + speed / 400);
+    ctx.fillStyle = `rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawHouse() {
+  const cx = houseX(), cy = houseY();
+  const pulse = 1 + 0.06 * Math.sin(elapsed * 4);
+  const s = HOUSE_RADIUS * pulse;
+  const hp01 = houseHP / lvl.houseHP;
+
+  const mainColor = hp01 > 0.5 ? '#00ffff' : '#ff4466';
+  const mainRgb = hp01 > 0.5 ? '0,255,255' : '255,68,102';
+  const alpha = 0.5 + 0.4 * hp01;
+
+  ctx.shadowBlur = 20 + 12 * pulse;
+  ctx.shadowColor = mainColor;
+
+  // Roof (triangle)
+  ctx.fillStyle = `rgba(${mainRgb},${alpha * 0.3})`;
+  ctx.strokeStyle = `rgba(${mainRgb},${alpha})`;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s * 1.2);
+  ctx.lineTo(cx - s * 1.4, cy - s * 0.3);
+  ctx.lineTo(cx + s * 1.4, cy - s * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Walls
+  const wallW = s * 1.1, wallH = s * 0.85;
+  ctx.fillStyle = `rgba(${mainRgb},${alpha * 0.15})`;
+  ctx.strokeStyle = `rgba(${mainRgb},${alpha * 0.8})`;
+  ctx.lineWidth = 1.5;
+  ctx.fillRect(cx - wallW, cy - s * 0.3, wallW * 2, wallH);
+  ctx.strokeRect(cx - wallW, cy - s * 0.3, wallW * 2, wallH);
+
+  // Door
+  ctx.fillStyle = `rgba(${mainRgb},${alpha * 0.4})`;
+  const doorW = s * 0.3, doorH = s * 0.5;
+  ctx.fillRect(cx - doorW / 2, cy - s * 0.3 + wallH - doorH, doorW, doorH);
+
+  // Window left
+  ctx.strokeStyle = `rgba(${mainRgb},${alpha * 0.6})`;
+  ctx.lineWidth = 1;
+  const winS = s * 0.22;
+  ctx.strokeRect(cx - s * 0.65 - winS, cy - s * 0.05 - winS, winS * 2, winS * 2);
+  ctx.beginPath();
+  ctx.moveTo(cx - s * 0.65, cy - s * 0.05 - winS);
+  ctx.lineTo(cx - s * 0.65, cy - s * 0.05 + winS);
+  ctx.moveTo(cx - s * 0.65 - winS, cy - s * 0.05);
+  ctx.lineTo(cx - s * 0.65 + winS, cy - s * 0.05);
+  ctx.stroke();
+
+  // Window right
+  ctx.strokeRect(cx + s * 0.65 - winS, cy - s * 0.05 - winS, winS * 2, winS * 2);
+  ctx.beginPath();
+  ctx.moveTo(cx + s * 0.65, cy - s * 0.05 - winS);
+  ctx.lineTo(cx + s * 0.65, cy - s * 0.05 + winS);
+  ctx.moveTo(cx + s * 0.65 - winS, cy - s * 0.05);
+  ctx.lineTo(cx + s * 0.65 + winS, cy - s * 0.05);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  // Label
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.round(s * 0.38)}px Courier New`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('HOUSE', cx, cy + s * 0.15);
+}
+
+function drawLines() {
+  ctx.shadowBlur = 12;
+  ctx.shadowColor = reversed ? '#00ffff' : '#ff8844';
+  ctx.strokeStyle = reversed ? 'rgba(0,255,255,0.8)' : 'rgba(255,136,68,0.8)';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+
+  for (let i = 0; i < lines.length; i++) {
+    const s = lines[i];
+    ctx.beginPath();
+    ctx.moveTo(s.ax, s.ay);
+    ctx.lineTo(s.bx, s.by);
+    ctx.stroke();
+    ctx.fillStyle = reversed ? '#00ffff' : '#ff8844';
+    ctx.beginPath(); ctx.arc(s.ax, s.ay, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s.bx, s.by, 4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawPreview() {
+  if (!drawStart || !drawEnd) return;
+  ctx.setLineDash([8, 6]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.shadowBlur = 6;
+  ctx.shadowColor = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(drawStart.x, drawStart.y);
+  ctx.lineTo(drawEnd.x, drawEnd.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+}
+
+function drawFlash() {
+  if (flashTimer > 0) {
+    const a = flashTimer / 0.08;
+    ctx.fillStyle = `rgba(255,68,102,${a * 0.15})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function drawGlitchBorder() {
+  if (glitchIntensity <= 0) return;
+  const a = glitchIntensity;
+  const color = reversed ? `rgba(0,255,255,${a * 0.6})` : `rgba(255,68,102,${a * 0.6})`;
+  ctx.shadowBlur = 40 * a;
+  ctx.shadowColor = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4 + 8 * a;
+  const offset = Math.random() * 6 * a;
+  ctx.strokeRect(-2 + offset, -2 + offset, W + 4 - offset * 2, H + 4 - offset * 2);
+  for (let i = 0; i < 3; i++) {
+    const y = Math.random() * H;
+    const h = 2 + Math.random() * 8 * a;
+    ctx.fillStyle = `rgba(${reversed ? '0,255,255' : '255,68,102'},${a * 0.2})`;
+    ctx.fillRect(0, y, W, h);
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawSpawnIndicators() {
+  const t = elapsed * 2;
+  const alpha = 0.08 + 0.04 * Math.sin(t * 3);
+  if (!reversed) {
+    const grad = ctx.createLinearGradient(0, 0, 0, 60);
+    grad.addColorStop(0, `rgba(255,68,102,${alpha})`);
+    grad.addColorStop(1, 'rgba(255,68,102,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, 60);
+  } else {
+    const grad = ctx.createLinearGradient(0, H, 0, H - 60);
+    grad.addColorStop(0, `rgba(0,255,255,${alpha})`);
+    grad.addColorStop(1, 'rgba(0,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - 60, W, 60);
+  }
+}
+
+function drawReverseWarning() {
+  if (!reverseWarning || reversed) return;
+  const timeToHit = Math.max(0, nextReverseAt - elapsed);
+  const pulse = Math.sin(elapsed * 14) * 0.5 + 0.5;
+  const urgency = 1 - (timeToHit / REV_WARN_TIME);
+  const a = (0.15 + urgency * 0.35) * pulse;
+
+  ctx.save();
+  ctx.shadowBlur = 30 + urgency * 30;
+  ctx.shadowColor = '#00ffff';
+  ctx.strokeStyle = `rgba(0,255,255,${a})`;
+  ctx.lineWidth = 3 + urgency * 5;
+  ctx.strokeRect(0, 0, W, H);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = a * 0.7;
+  ctx.font = 'bold 20px Courier New';
+  ctx.fillStyle = '#00ffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = '#00ffff';
+  ctx.fillText('⚠ REVERSAL INCOMING ⚠', W / 2, 110);
+  ctx.restore();
+
+  const grad = ctx.createLinearGradient(0, H, 0, H - 50);
+  grad.addColorStop(0, `rgba(0,255,255,${a * 0.5})`);
+  grad.addColorStop(1, 'rgba(0,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, H - 50, W, 50);
+}
+
+function drawWindIndicator() {
+  if (lvl.windAmp <= 0) return;
+  const windVal = Math.sin(elapsed * 1.2) * lvl.windAmp;
+  const normWind = windVal / lvl.windAmp;
+  const arrowLen = Math.abs(normWind) * 40;
+  const cy = 78;
+  const cx = W / 2;
+  ctx.save();
+  ctx.globalAlpha = 0.3 + Math.abs(normWind) * 0.4;
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - arrowLen, cy);
+  ctx.lineTo(cx + arrowLen, cy);
+  const tipX = normWind > 0 ? cx + arrowLen : cx - arrowLen;
+  const dir = normWind > 0 ? -1 : 1;
+  ctx.moveTo(tipX, cy);
+  ctx.lineTo(tipX + dir * 8, cy - 5);
+  ctx.moveTo(tipX, cy);
+  ctx.lineTo(tipX + dir * 8, cy + 5);
+  ctx.stroke();
+  ctx.font = '10px Courier New';
+  ctx.fillStyle = '#ffd700';
+  ctx.textAlign = 'center';
+  ctx.fillText('WIND', cx, cy + 16);
+  ctx.restore();
+}
+
+// ─── Main loop ───
+let lastTime = 0;
+
+function gameLoop(timestamp) {
+  requestAnimationFrame(gameLoop);
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  if (gameState !== 'playing') return;
+
+  elapsed += dt;
+  if (flashTimer > 0) flashTimer -= dt;
+  if (glitchIntensity > 0) glitchIntensity = Math.max(0, glitchIntensity - dt * 2.5);
+
+  updatePhysics(dt);
+  updateHUD();
+
+  if (houseHP <= 0) {
+    gameState = 'lose';
+    showResult('GAME OVER', 'Your house has been destroyed.', 'lose');
+    return;
+  }
+  if (elapsed >= lvl.duration) {
+    gameState = 'win';
+    const hp01 = houseHP / lvl.houseHP;
+    const stars = hp01 > 0.8 ? 3 : hp01 > 0.5 ? 2 : 1;
+    if (stars > levelStars[currentLevel]) levelStars[currentLevel] = stars;
+    if (currentLevel + 1 > unlockedLevel && currentLevel + 1 < LEVELS.length) {
+      unlockedLevel = currentLevel + 1;
+    }
+    saveProgress();
+    const starStr = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+    showResult('LEVEL CLEAR', `House integrity: ${Math.max(0, houseHP)}%  ${starStr}`, 'win');
+    return;
+  }
+
+  drawTrailBg();
+  drawSpawnIndicators();
+  drawParticles();
+  drawLines();
+  drawPreview();
+  drawHouse();
+  drawFlash();
+  drawGlitchBorder();
+  drawReverseWarning();
+  drawWindIndicator();
+}
+
+function showResult(title, desc, type) {
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = title;
+  overlayTitle.className = type;
+  overlayDesc.textContent = desc;
+  levelSelectDiv.innerHTML = '';
+
+  btnRetry.style.display = 'inline-block';
+  btnMenu.style.display = 'inline-block';
+
+  if (type === 'win' && currentLevel + 1 < LEVELS.length) {
+    btnNext.style.display = 'inline-block';
+    overlaySub.textContent = `Next: ${LEVELS[currentLevel + 1].name}`;
+  } else if (type === 'win') {
+    btnNext.style.display = 'none';
+    overlaySub.textContent = 'All levels cleared!';
+  } else {
+    btnNext.style.display = 'none';
+    overlaySub.textContent = '';
+  }
+}
+
+// ─── Input ───
+canvas.addEventListener('mousedown', (e) => {
+  if (gameState !== 'playing') return;
+  drawStart = { x: e.clientX, y: e.clientY };
+  drawEnd = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('mousemove', (e) => {
+  if (drawStart) drawEnd = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('mouseup', (e) => {
+  if (!drawStart || gameState !== 'playing') { drawStart = null; drawEnd = null; return; }
+  const end = { x: e.clientX, y: e.clientY };
+  const dx = end.x - drawStart.x, dy = end.y - drawStart.y;
+  if (Math.sqrt(dx * dx + dy * dy) > 20) {
+    if (lines.length >= lvl.maxLines) lines.shift();
+    lines.push({ ax: drawStart.x, ay: drawStart.y, bx: end.x, by: end.y });
+  }
+  drawStart = null; drawEnd = null;
+});
+canvas.addEventListener('mouseleave', () => { drawStart = null; drawEnd = null; });
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'KeyR' && gameState === 'playing') {
+    if (lines.length > 0) lines.shift();
+  }
+});
+
+btnNext.addEventListener('click', () => {
+  if (currentLevel + 1 < LEVELS.length) startLevel(currentLevel + 1);
+});
+btnRetry.addEventListener('click', () => startLevel(currentLevel));
+btnMenu.addEventListener('click', () => showMenu());
+
+// Touch
+canvas.addEventListener('touchstart', (e) => {
+  if (gameState !== 'playing') return;
+  e.preventDefault();
+  const t = e.touches[0];
+  drawStart = { x: t.clientX, y: t.clientY };
+  drawEnd = { x: t.clientX, y: t.clientY };
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  if (drawStart) { e.preventDefault(); const t = e.touches[0]; drawEnd = { x: t.clientX, y: t.clientY }; }
+}, { passive: false });
+canvas.addEventListener('touchend', (e) => {
+  if (!drawStart || gameState !== 'playing') { drawStart = null; drawEnd = null; return; }
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const end = { x: t.clientX, y: t.clientY };
+  const dx = end.x - drawStart.x, dy = end.y - drawStart.y;
+  if (Math.sqrt(dx * dx + dy * dy) > 20) {
+    if (lines.length >= lvl.maxLines) lines.shift();
+    lines.push({ ax: drawStart.x, ay: drawStart.y, bx: end.x, by: end.y });
+  }
+  drawStart = null; drawEnd = null;
+}, { passive: false });
+
+// Boot
+showMenu();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

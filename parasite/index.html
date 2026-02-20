@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P A R A S I T E</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Courier New',monospace}
+canvas{display:block;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// ════════════════════════════════════════
+//  P A R A S I T E  —  "You are the bug."
+// ════════════════════════════════════════
+
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const W = 800, H = 600;
+C.width = W; C.height = H;
+
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  C.style.width = (W * s) + 'px';
+  C.style.height = (H * s) + 'px';
+}
+resize();
+addEventListener('resize', resize);
+
+// ── Input ──
+const keys = {};
+let anyKeyPressed = false;
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if (!anyKeyPressed) { anyKeyPressed = true; initAudio(); }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+addEventListener('click', () => { if (!anyKeyPressed) { anyKeyPressed = true; initAudio(); } });
+
+// ── Audio ──
+let audioCtx, masterGain;
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.3;
+  masterGain.connect(audioCtx.destination);
+}
+function sfx(freq, dur, type = 'square', vol = 0.1) {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(Math.max(freq * 0.3, 20), audioCtx.currentTime + dur);
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g).connect(masterGain);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function sfxInfect() { sfx(200 + Math.random() * 400, 0.08, 'sawtooth', 0.07); }
+function sfxCorrupt() { sfx(60 + Math.random() * 80, 0.3, 'sawtooth', 0.1); }
+function sfxBass() { sfx(35, 1.5, 'sine', 0.15); }
+function sfxHit() { sfx(400 + Math.random() * 200, 0.05, 'square', 0.05); }
+
+// ── Utilities ──
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => Math.random() * (b - a) + a;
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+
+const COL = {
+  para: '#00FF41', paraDark: '#00AA28', paraGlow: 'rgba(0,255,65,',
+  inf: '#9B59B6', infBright: '#C471ED',
+  red: '#FF0040', cyan: '#00FFFF', white: '#FFFFFF',
+  bg: '#0A0A0A', grid: '#1A1A2E'
+};
+
+// ── Particles ──
+const parts = [];
+function emitParts(x, y, n, color, spd = 2, life = 0.8) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * spd;
+    parts.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life, max: life, color, sz: 1+Math.random()*2 });
+  }
+}
+function updateParts(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.x += p.vx; p.y += p.vy; p.life -= dt;
+    if (p.life <= 0) parts.splice(i, 1);
+  }
+}
+function drawParts(ctx) {
+  for (const p of parts) {
+    ctx.globalAlpha = p.life / p.max;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x|0, p.y|0, p.sz, p.sz);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── Glitch FX ──
+function glitch(ctx, intensity) {
+  if (intensity <= 0.01) return;
+  for (let i = 0; i < intensity * 6; i++) {
+    if (Math.random() < 0.4) {
+      const y = Math.random() * H | 0;
+      const h = (1 + Math.random() * intensity * 40) | 0;
+      const off = ((Math.random() - 0.5) * intensity * 80) | 0;
+      ctx.drawImage(C, 0, y, W, h, off, y, W, h);
+    }
+  }
+  const n = intensity * 20 | 0;
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = [COL.para, COL.inf, COL.red, COL.cyan][randInt(0, 3)];
+    ctx.globalAlpha = Math.random() * 0.15 * intensity;
+    ctx.fillRect(Math.random()*W|0, Math.random()*H|0, Math.random()*40+2, Math.random()*3+1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = `rgba(0,0,0,${0.015 + intensity * 0.04})`;
+  for (let y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1);
+  if (Math.random() < intensity * 0.08) {
+    ctx.fillStyle = `${COL.paraGlow}${intensity * 0.06})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function drawCRT(ctx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.03)';
+  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+}
+
+// ── Retro Text ──
+function drawText(ctx, text, x, y, size, color, align = 'center') {
+  ctx.font = `bold ${size}px "Courier New", monospace`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+function glitchText(ctx, text, x, y, size, color, intensity) {
+  for (let i = 0; i < 2; i++) {
+    const ox = (Math.random() - 0.5) * intensity * 10;
+    const oy = (Math.random() - 0.5) * intensity * 4;
+    ctx.globalAlpha = 0.3;
+    drawText(ctx, text, x + ox, y + oy, size, i === 0 ? COL.red : COL.cyan);
+  }
+  ctx.globalAlpha = 1;
+  drawText(ctx, text, x, y, size, color);
+}
+
+// ════════════════════════════════════════
+//  PARASITE — Player Entity
+// ════════════════════════════════════════
+const P = {
+  x: 0, y: 0, size: 5, speed: 160, time: 0,
+  trail: [], dashT: 0, dashCD: 0,
+  infectR: 22, infected: 0, visible: false,
+
+  reset(x, y) { this.x = x; this.y = y; this.trail = []; this.dashT = 0; this.dashCD = 0; this.visible = true; },
+
+  update(dt) {
+    if (!this.visible) return;
+    this.time += dt;
+    let dx = 0, dy = 0;
+    if (keys['ArrowLeft'] || keys['KeyA']) dx = -1;
+    if (keys['ArrowRight'] || keys['KeyD']) dx = 1;
+    if (keys['ArrowUp'] || keys['KeyW']) dy = -1;
+    if (keys['ArrowDown'] || keys['KeyS']) dy = 1;
+    if (dx && dy) { dx *= 0.707; dy *= 0.707; }
+    let sm = 1;
+    if (this.dashT > 0) { sm = 3; this.dashT -= dt; }
+    if (keys['Space'] && this.dashCD <= 0 && (dx || dy)) {
+      this.dashT = 0.15; this.dashCD = 0.6; sfx(300, 0.1, 'sawtooth', 0.04);
+    }
+    if (this.dashCD > 0) this.dashCD -= dt;
+    const spd = (this.speed + this.infected * 2) * sm;
+    this.x += dx * spd * dt;
+    this.y += dy * spd * dt;
+    this.x = clamp(this.x, 5, W - 5);
+    this.y = clamp(this.y, 5, H - 5);
+    if (dx || dy) this.trail.push({ x: this.x, y: this.y, life: 0.4 });
+    for (let i = this.trail.length - 1; i >= 0; i--) { this.trail[i].life -= dt; if (this.trail[i].life <= 0) this.trail.splice(i, 1); }
+    this.size = 5 + this.infected * 0.25;
+    this.infectR = 22 + this.infected * 0.4;
+  },
+
+  draw(ctx) {
+    if (!this.visible) return;
+    const pulse = Math.sin(this.time * 8) * 0.3 + 1;
+    const s = this.size * pulse;
+    for (const t of this.trail) {
+      ctx.globalAlpha = (t.life / 0.4) * 0.25;
+      ctx.fillStyle = COL.para;
+      ctx.fillRect(t.x - 1 | 0, t.y - 1 | 0, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    const tc = Math.min(8, 3 + (this.infected / 3 | 0));
+    ctx.strokeStyle = COL.para; ctx.lineWidth = 1;
+    for (let i = 0; i < tc; i++) {
+      const a = (i / tc) * Math.PI * 2 + this.time * 2;
+      const len = s * (2 + Math.sin(this.time * 5 + i * 2));
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(this.x, this.y);
+      ctx.quadraticCurveTo(
+        this.x + Math.cos(a + 0.4) * len * 0.5, this.y + Math.sin(a + 0.4) * len * 0.5,
+        this.x + Math.cos(a) * len, this.y + Math.sin(a) * len
+      );
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const gr = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, s * 3);
+    gr.addColorStop(0, `${COL.paraGlow}0.25)`); gr.addColorStop(1, `${COL.paraGlow}0)`);
+    ctx.fillStyle = gr; ctx.fillRect(this.x - s * 3, this.y - s * 3, s * 6, s * 6);
+    ctx.shadowBlur = 15; ctx.shadowColor = COL.para;
+    ctx.fillStyle = COL.para; ctx.beginPath(); ctx.arc(this.x, this.y, s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#AAFFAA'; ctx.beginPath(); ctx.arc(this.x, this.y, s * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+};
+
+// ════════════════════════════════════════
+//  STAGE 1 — TETRIS
+// ════════════════════════════════════════
+const Tetris = (() => {
+  const COLS = 10, ROWS = 20, CS = 24;
+  const OX = (W - COLS * CS) / 2, OY = (H - ROWS * CS) / 2;
+  const SHAPES = [
+    [[1,1,1,1]],
+    [[1,1],[1,1]],
+    [[0,1,0],[1,1,1]],
+    [[0,1,1],[1,1,0]],
+    [[1,1,0],[0,1,1]],
+    [[1,0,0],[1,1,1]],
+    [[0,0,1],[1,1,1]]
+  ];
+  const COLORS = ['#00F0F0','#F0F000','#A000F0','#00F000','#F00000','#0000F0','#F0A000'];
+
+  let grid, piece, px, py, pType, nextType, score, dropT, aiT, aiTarget;
+  let infected, corruption, complete, introT, outroT;
+
+  function newGrid() { return Array.from({length:ROWS}, ()=>Array(COLS).fill(0)); }
+  function rotate(shape) {
+    const r = shape.length, c = shape[0].length;
+    return Array.from({length:c}, (_,i) => Array.from({length:r}, (_,j) => shape[r-1-j][i]));
+  }
+  function fits(shape, gx, gy) {
+    for (let r = 0; r < shape.length; r++)
+      for (let c = 0; c < shape[r].length; c++)
+        if (shape[r][c]) {
+          const nx = gx + c, ny = gy + r;
+          if (nx < 0 || nx >= COLS || ny >= ROWS) return false;
+          if (ny >= 0 && grid[ny][nx]) return false;
+        }
+    return true;
+  }
+  function place(shape, gx, gy, type) {
+    for (let r = 0; r < shape.length; r++)
+      for (let c = 0; c < shape[r].length; c++) {
+        const gr = gy + r, gc = gx + c;
+        if (shape[r][c] && gr >= 0 && gr < ROWS && gc >= 0 && gc < COLS) grid[gr][gc] = type + 1;
+      }
+  }
+  function clearLines() {
+    let cleared = 0;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (!grid[r] || !infected[r]) continue;
+      const full = grid[r].every(c => c > 0);
+      const hasInfected = infected[r].some(v => v);
+      if (full && !hasInfected) {
+        grid.splice(r, 1); grid.unshift(Array(COLS).fill(0));
+        infected.splice(r, 1); infected.unshift(Array(COLS).fill(false));
+        cleared++; r++;
+      }
+    }
+    if (cleared) { score += cleared * 100; sfxHit(); }
+  }
+  function spawnPiece() {
+    pType = nextType !== undefined ? nextType : randInt(0, 6);
+    nextType = randInt(0, 6);
+    piece = SHAPES[pType].map(r => [...r]);
+    px = ((COLS - piece[0].length) / 2) | 0; py = -piece.length;
+    aiTarget = null; aiT = 0;
+    if (!fits(piece, px, py + 1)) complete = true;
+  }
+  function computeAI() {
+    let best = null, bestScore = -Infinity;
+    for (let rot = 0; rot < 4; rot++) {
+      let sh = SHAPES[pType].map(r => [...r]);
+      for (let rr = 0; rr < rot; rr++) sh = rotate(sh);
+      for (let tx = -1; tx < COLS; tx++) {
+        if (!fits(sh, tx, py)) continue;
+        let ty = py;
+        while (fits(sh, tx, ty + 1)) ty++;
+        let sc = ty * 10;
+        for (let r = 0; r < sh.length; r++)
+          for (let c = 0; c < sh[r].length; c++)
+            if (sh[r][c] && ty+r+1 < ROWS && ty+r >= 0 && !grid[ty+r+1]?.[tx+c]) sc -= 20;
+        if (sc > bestScore) { bestScore = sc; best = { x: tx, rot, shape: sh }; }
+      }
+    }
+    return best;
+  }
+
+  function init() {
+    grid = newGrid();
+    infected = Array.from({length:ROWS}, ()=>Array(COLS).fill(false));
+    score = 0; dropT = 0; aiT = 0; aiTarget = null;
+    corruption = 0; complete = false; introT = 2; outroT = 0;
+    spawnPiece();
+    P.reset(OX - 40, H / 2);
+  }
+
+  function update(dt) {
+    if (introT > 0) { introT -= dt; return; }
+    if (complete) { outroT += dt; return outroT > 3; }
+
+    dropT += dt;
+    aiT += dt;
+    if (aiT > 0.3 && !aiTarget) { aiTarget = computeAI(); }
+    if (aiTarget && aiT > 0.1) {
+      aiT = 0;
+      if (piece !== aiTarget.shape) piece = aiTarget.shape;
+      if (px < aiTarget.x) px++;
+      else if (px > aiTarget.x) px--;
+    }
+    const dropSpeed = 0.4 - corruption * 0.15;
+    if (dropT > dropSpeed) {
+      dropT = 0;
+      if (fits(piece, px, py + 1)) { py++; }
+      else {
+        place(piece, px, py, pType); clearLines(); spawnPiece();
+      }
+    }
+
+    spreadInfection(dt);
+    let totalCells = 0, infectedCells = 0;
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        if (grid[r][c]) { totalCells++; if (infected[r][c]) infectedCells++; }
+      }
+    corruption = totalCells > 0 ? infectedCells / Math.max(totalCells, 30) : 0;
+    if (corruption > 0.85) complete = true;
+
+    checkParasiteInfection();
+    return false;
+  }
+
+  function checkParasiteInfection() {
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        if (!grid[r][c] || infected[r][c]) continue;
+        const cx = OX + c * CS + CS / 2, cy = OY + r * CS + CS / 2;
+        if (dist(P.x, P.y, cx, cy) < P.infectR) {
+          infected[r][c] = true; P.infected++;
+          emitParts(cx, cy, 5, COL.para, 2, 0.5);
+          sfxInfect();
+        }
+      }
+  }
+
+  function spreadInfection(dt) {
+    if (Math.random() > dt * 3 * (0.5 + corruption)) return;
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        if (!infected[r][c]) continue;
+        const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+        for (const [dr, dc] of dirs) {
+          const nr = r+dr, nc = c+dc;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc] && !infected[nr][nc] && Math.random() < 0.15) {
+            infected[nr][nc] = true;
+            emitParts(OX + nc * CS + CS/2, OY + nr * CS + CS/2, 3, COL.inf, 1, 0.3);
+          }
+        }
+      }
+  }
+
+  function draw(ctx) {
+    ctx.fillStyle = '#0A0A1A'; ctx.fillRect(0, 0, W, H);
+
+    if (introT > 0) {
+      const a = clamp(1 - introT / 2, 0, 1);
+      ctx.globalAlpha = a;
+      glitchText(ctx, 'STAGE 1', W/2, H/2 - 30, 40, COL.white, 0.5);
+      glitchText(ctx, '— TETRIS —', W/2, H/2 + 20, 24, COL.cyan, 0.3);
+      drawText(ctx, 'infect the blocks', W/2, H/2 + 60, 14, '#666');
+      ctx.globalAlpha = 1;
+      drawCRT(ctx); return;
+    }
+
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
+    ctx.strokeRect(OX - 1, OY - 1, COLS * CS + 2, ROWS * CS + 2);
+
+    for (let r = 0; r < ROWS; r++) {
+      if (!grid[r]) continue;
+      for (let c = 0; c < COLS; c++) {
+        const v = grid[r][c];
+        if (!v) continue;
+        const bx = OX + c * CS, by = OY + r * CS;
+        if (infected[r][c]) {
+          const flicker = Math.sin(P.time * 10 + r + c) * 0.2 + 0.8;
+          ctx.fillStyle = Math.random() < 0.1 ? COL.inf : COL.para;
+          ctx.globalAlpha = flicker;
+          ctx.fillRect(bx + 1, by + 1, CS - 2, CS - 2);
+          ctx.globalAlpha = 1;
+          if (Math.random() < 0.02) ctx.fillRect(bx + rand(0, CS), by, rand(2, 6), CS);
+        } else {
+          ctx.fillStyle = COLORS[v - 1];
+          ctx.fillRect(bx + 1, by + 1, CS - 2, CS - 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.15)';
+          ctx.fillRect(bx + 1, by + 1, CS - 2, 3);
+        }
+      }
+    }
+
+    if (piece && !complete) {
+      ctx.globalAlpha = 0.8;
+      for (let r = 0; r < piece.length; r++)
+        for (let c = 0; c < piece[r].length; c++)
+          if (piece[r][c]) {
+            const bx = OX + (px + c) * CS, by = OY + (py + r) * CS;
+            ctx.fillStyle = COLORS[pType]; ctx.fillRect(bx + 1, by + 1, CS - 2, CS - 2);
+          }
+      ctx.globalAlpha = 1;
+    }
+
+    drawText(ctx, `SCORE ${score}`, OX + COLS * CS + 60, OY + 30, 14, '#888');
+    drawText(ctx, 'NEXT', OX + COLS * CS + 60, OY + 70, 12, '#666');
+    if (nextType !== undefined) {
+      const ns = SHAPES[nextType];
+      for (let r = 0; r < ns.length; r++)
+        for (let c = 0; c < ns[r].length; c++)
+          if (ns[r][c]) {
+            ctx.fillStyle = COLORS[nextType];
+            ctx.fillRect(OX + COLS * CS + 40 + c * 16, OY + 90 + r * 16, 14, 14);
+          }
+    }
+
+    const barX = OX - 50, barY = OY, barW = 12, barH = ROWS * CS;
+    ctx.fillStyle = '#111'; ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = COL.para; ctx.fillRect(barX, barY + barH * (1 - corruption), barW, barH * corruption);
+    drawText(ctx, `${(corruption * 100)|0}%`, barX + 6, barY - 14, 11, COL.para);
+
+    P.draw(ctx);
+    drawParts(ctx);
+    glitch(ctx, corruption * 0.7);
+    drawCRT(ctx);
+
+    if (complete && outroT > 0) {
+      const a = clamp(outroT / 2, 0, 1);
+      ctx.fillStyle = `rgba(0,0,0,${a * 0.7})`; ctx.fillRect(0, 0, W, H);
+      glitch(ctx, 0.5 + outroT * 0.3);
+      if (outroT > 1) {
+        glitchText(ctx, 'GAME OVER', W/2, H/2 - 10, 36, COL.red, outroT * 0.3);
+        ctx.globalAlpha = clamp(outroT - 1.5, 0, 1);
+        drawText(ctx, '...but not for you.', W/2, H/2 + 35, 16, COL.para);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  return { init, update, draw, getCorruption: () => corruption };
+})();
+
+// ════════════════════════════════════════
+//  STAGE 2 — BREAKOUT
+// ════════════════════════════════════════
+const Breakout = (() => {
+  const BCOLS = 10, BROWS = 6, BW = 64, BH = 22, PAD = 4;
+  const AREA_X = (W - BCOLS * (BW + PAD)) / 2;
+  const AREA_Y = 60;
+  const PWIDTH = 100, PHEIGHT = 14;
+  const BCOLORS = ['#FF4444','#FF8844','#FFCC44','#44FF44','#4488FF','#AA44FF'];
+
+  let bricks, ball, paddle, score, corruption, complete, introT, outroT, infected;
+
+  function init() {
+    bricks = [];
+    infected = [];
+    for (let r = 0; r < BROWS; r++)
+      for (let c = 0; c < BCOLS; c++) {
+        bricks.push({ x: AREA_X + c * (BW + PAD), y: AREA_Y + r * (BH + PAD), w: BW, h: BH, alive: true, color: BCOLORS[r], row: r });
+        infected.push(false);
+      }
+    ball = { x: W/2, y: H - 100, vx: 200, vy: -250, r: 6, inf: false, trail: [] };
+    paddle = { x: W/2 - PWIDTH/2, y: H - 50, w: PWIDTH, h: PHEIGHT, inf: false };
+    score = 0; corruption = 0; complete = false; introT = 2; outroT = 0;
+    P.reset(50, H / 2);
+  }
+
+  function update(dt) {
+    if (introT > 0) { introT -= dt; return false; }
+    if (complete) { outroT += dt; return outroT > 3; }
+
+    // Paddle AI
+    const targetX = ball.x - paddle.w / 2;
+    if (paddle.inf) {
+      paddle.x += (Math.random() - 0.5) * 400 * dt;
+    } else {
+      paddle.x += (targetX - paddle.x) * 4 * dt;
+    }
+    paddle.x = clamp(paddle.x, 0, W - paddle.w);
+
+    // Ball
+    ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+    if (ball.inf) ball.trail.push({ x: ball.x, y: ball.y, life: 0.3 });
+    for (let i = ball.trail.length - 1; i >= 0; i--) { ball.trail[i].life -= dt; if (ball.trail[i].life <= 0) ball.trail.splice(i, 1); }
+
+    if (ball.x < ball.r || ball.x > W - ball.r) { ball.vx *= -1; sfxHit(); }
+    if (ball.y < ball.r) { ball.vy *= -1; sfxHit(); }
+    if (ball.y > H + 20) { ball.y = H - 100; ball.vy = -250; ball.vx = rand(-200, 200); }
+
+    if (ball.y + ball.r > paddle.y && ball.y - ball.r < paddle.y + paddle.h &&
+        ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+      ball.vy = -Math.abs(ball.vy);
+      ball.vx = (ball.x - (paddle.x + paddle.w/2)) * 4;
+      sfxHit();
+    }
+
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      if (!b.alive) continue;
+      if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
+          ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h) {
+        ball.vy *= -1;
+        if (infected[i]) {
+          if (Math.random() < 0.3) {
+            const nb = { x: b.x + rand(-30, 30), y: b.y + rand(10, 30), w: BW, h: BH, alive: true, color: COL.para, row: b.row };
+            bricks.push(nb); infected.push(true);
+            emitParts(nb.x + BW/2, nb.y + BH/2, 8, COL.para, 3, 0.5);
+          }
+        } else {
+          b.alive = false; score += 10; sfxHit();
+          emitParts(b.x + BW/2, b.y + BH/2, 6, b.color, 2, 0.4);
+        }
+        break;
+      }
+    }
+
+    checkParasiteInfection();
+    spreadInfection(dt);
+
+    let alive = 0, inf = 0;
+    for (let i = 0; i < bricks.length; i++) {
+      if (bricks[i].alive) { alive++; if (infected[i]) inf++; }
+    }
+    corruption = alive > 0 ? inf / Math.max(alive, 10) : 0;
+    if (corruption > 0.8 || alive > 80) complete = true;
+
+    return false;
+  }
+
+  function checkParasiteInfection() {
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      if (!b.alive || infected[i]) continue;
+      const cx = b.x + b.w/2, cy = b.y + b.h/2;
+      if (dist(P.x, P.y, cx, cy) < P.infectR + 20) {
+        infected[i] = true; P.infected++;
+        emitParts(cx, cy, 6, COL.para, 2, 0.5); sfxInfect();
+      }
+    }
+    const pcx = paddle.x + paddle.w/2, pcy = paddle.y + paddle.h/2;
+    if (!paddle.inf && dist(P.x, P.y, pcx, pcy) < P.infectR + 30) {
+      paddle.inf = true; P.infected++; sfxCorrupt();
+      emitParts(pcx, pcy, 15, COL.inf, 3, 0.8);
+    }
+    if (!ball.inf && dist(P.x, P.y, ball.x, ball.y) < P.infectR) {
+      ball.inf = true; P.infected++; sfxCorrupt();
+      ball.vx *= 1.5; ball.vy *= 1.5;
+    }
+  }
+
+  function spreadInfection(dt) {
+    if (Math.random() > dt * 2 * (0.3 + corruption)) return;
+    for (let i = 0; i < bricks.length; i++) {
+      if (!infected[i] || !bricks[i].alive) continue;
+      for (let j = 0; j < bricks.length; j++) {
+        if (infected[j] || !bricks[j].alive) continue;
+        if (dist(bricks[i].x, bricks[i].y, bricks[j].x, bricks[j].y) < 80 && Math.random() < 0.1) {
+          infected[j] = true;
+          emitParts(bricks[j].x + BW/2, bricks[j].y + BH/2, 3, COL.inf, 1, 0.3);
+        }
+      }
+    }
+  }
+
+  function draw(ctx) {
+    ctx.fillStyle = '#0A0A1A'; ctx.fillRect(0, 0, W, H);
+
+    if (introT > 0) {
+      const a = clamp(1 - introT / 2, 0, 1);
+      ctx.globalAlpha = a;
+      glitchText(ctx, 'STAGE 2', W/2, H/2 - 30, 40, COL.white, 0.5);
+      glitchText(ctx, '— BREAKOUT —', W/2, H/2 + 20, 24, COL.cyan, 0.3);
+      drawText(ctx, 'multiply and consume', W/2, H/2 + 60, 14, '#666');
+      ctx.globalAlpha = 1; drawCRT(ctx); return;
+    }
+
+    for (let i = 0; i < bricks.length; i++) {
+      const b = bricks[i];
+      if (!b.alive) continue;
+      if (infected[i]) {
+        const fl = Math.sin(P.time * 10 + i) * 0.2 + 0.8;
+        ctx.globalAlpha = fl;
+        ctx.fillStyle = Math.random() < 0.15 ? COL.inf : COL.para;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = b.color;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(b.x, b.y, b.w, 3);
+      }
+    }
+
+    // Ball trail
+    for (const t of ball.trail) {
+      ctx.globalAlpha = (t.life / 0.3) * 0.4;
+      ctx.fillStyle = COL.para;
+      ctx.beginPath(); ctx.arc(t.x, t.y, ball.r * 0.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = ball.inf ? COL.para : COL.white;
+    ctx.shadowBlur = ball.inf ? 10 : 0;
+    ctx.shadowColor = COL.para;
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = paddle.inf ? COL.inf : '#CCCCCC';
+    if (paddle.inf) { ctx.shadowBlur = 8; ctx.shadowColor = COL.inf; }
+    ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+    ctx.shadowBlur = 0;
+
+    drawText(ctx, `SCORE ${score}`, W/2, 30, 16, '#888');
+
+    const barX = W - 40, barY = 60, barW = 12, barH = H - 120;
+    ctx.fillStyle = '#111'; ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = COL.para; ctx.fillRect(barX, barY + barH * (1-corruption), barW, barH * corruption);
+    drawText(ctx, `${(corruption*100)|0}%`, barX + 6, barY - 14, 11, COL.para);
+
+    P.draw(ctx);
+    drawParts(ctx);
+    glitch(ctx, corruption * 0.8);
+    drawCRT(ctx);
+
+    if (complete && outroT > 0) {
+      const a = clamp(outroT / 2, 0, 1);
+      ctx.fillStyle = `rgba(0,0,0,${a * 0.7})`; ctx.fillRect(0, 0, W, H);
+      glitch(ctx, 0.5 + outroT * 0.4);
+      if (outroT > 1) {
+        glitchText(ctx, 'SYSTEM ERROR', W/2, H/2 - 10, 36, COL.red, outroT * 0.3);
+        ctx.globalAlpha = clamp(outroT - 1.5, 0, 1);
+        drawText(ctx, 'bricks cannot contain you.', W/2, H/2 + 35, 16, COL.para);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  return { init, update, draw, getCorruption: () => corruption };
+})();
+
+// ════════════════════════════════════════
+//  STAGE 3 — SPACE INVADERS
+// ════════════════════════════════════════
+const Invaders = (() => {
+  const ICOLS = 8, IROWS = 5, IW = 32, IH = 24, IPAD = 14;
+  const AREA_X = (W - ICOLS * (IW + IPAD)) / 2;
+  let invaders, infected, bullets, shipBullets, ship, dir, moveT, stepDown;
+  let score, corruption, complete, introT, outroT, shipFireT;
+
+  function init() {
+    invaders = []; infected = [];
+    for (let r = 0; r < IROWS; r++)
+      for (let c = 0; c < ICOLS; c++) {
+        invaders.push({ x: AREA_X + c * (IW+IPAD), y: 60 + r * (IH+IPAD), w: IW, h: IH, alive: true, row: r });
+        infected.push(false);
+      }
+    bullets = []; shipBullets = [];
+    ship = { x: W/2 - 20, y: H - 50, w: 40, h: 16, inf: false };
+    dir = 1; moveT = 0; stepDown = false;
+    score = 0; corruption = 0; complete = false; introT = 2; outroT = 0; shipFireT = 0;
+    P.reset(W/2, H - 120);
+  }
+
+  function update(dt) {
+    if (introT > 0) { introT -= dt; return false; }
+    if (complete) { outroT += dt; return outroT > 3; }
+
+    moveT += dt;
+    const moveSpeed = 0.6 - corruption * 0.3;
+    if (moveT > moveSpeed) {
+      moveT = 0;
+      let edgeHit = false;
+      for (const inv of invaders) {
+        if (!inv.alive) continue;
+        inv.x += dir * 16;
+        if (inv.x < 10 || inv.x + inv.w > W - 10) edgeHit = true;
+      }
+      if (edgeHit) {
+        dir *= -1;
+        for (const inv of invaders) { if (inv.alive) inv.y += 12; }
+      }
+    }
+
+    // Infected invaders shoot at others
+    for (let i = 0; i < invaders.length; i++) {
+      if (!invaders[i].alive || !infected[i]) continue;
+      if (Math.random() < dt * 2) {
+        let target = null;
+        for (let j = 0; j < invaders.length; j++) {
+          if (j !== i && invaders[j].alive && !infected[j] && Math.random() < 0.3) { target = invaders[j]; break; }
+        }
+        if (target) {
+          const a = Math.atan2(target.y - invaders[i].y, target.x - invaders[i].x);
+          bullets.push({ x: invaders[i].x + IW/2, y: invaders[i].y + IH/2, vx: Math.cos(a)*200, vy: Math.sin(a)*200, inf: true });
+        }
+      }
+    }
+
+    // Normal invader shooting
+    for (let i = 0; i < invaders.length; i++) {
+      if (!invaders[i].alive || infected[i]) continue;
+      if (Math.random() < dt * 0.3) {
+        bullets.push({ x: invaders[i].x + IW/2, y: invaders[i].y + IH, vx: 0, vy: 200, inf: false });
+      }
+    }
+
+    // Ship AI + shooting
+    shipFireT += dt;
+    if (ship.inf) {
+      ship.x += (Math.random() - 0.5) * 300 * dt;
+      if (shipFireT > 0.2) {
+        shipFireT = 0;
+        const a = rand(-0.8, 0.8);
+        shipBullets.push({ x: ship.x + ship.w/2, y: ship.y, vx: Math.sin(a)*100, vy: -300 });
+      }
+    } else {
+      let closest = null, minD = Infinity;
+      for (const inv of invaders) {
+        if (!inv.alive) continue;
+        const d = Math.abs(inv.x + IW/2 - (ship.x + ship.w/2));
+        if (d < minD) { minD = d; closest = inv; }
+      }
+      if (closest) ship.x += (closest.x + IW/2 - ship.x - ship.w/2) * 3 * dt;
+      if (shipFireT > 0.5) { shipFireT = 0; shipBullets.push({ x: ship.x + ship.w/2, y: ship.y, vx: 0, vy: -350 }); }
+    }
+    ship.x = clamp(ship.x, 0, W - ship.w);
+
+    // Update bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      bullets[i].x += bullets[i].vx * dt; bullets[i].y += bullets[i].vy * dt;
+      if (bullets[i].y > H || bullets[i].y < 0 || bullets[i].x < 0 || bullets[i].x > W) { bullets.splice(i, 1); continue; }
+      if (bullets[i].inf) {
+        for (let j = 0; j < invaders.length; j++) {
+          if (!invaders[j].alive || infected[j]) continue;
+          const inv = invaders[j];
+          if (bullets[i].x > inv.x && bullets[i].x < inv.x + inv.w && bullets[i].y > inv.y && bullets[i].y < inv.y + inv.h) {
+            infected[j] = true;
+            emitParts(inv.x+IW/2, inv.y+IH/2, 8, COL.para, 3, 0.6);
+            sfxInfect();
+            bullets.splice(i, 1); break;
+          }
+        }
+      }
+    }
+    for (let i = shipBullets.length - 1; i >= 0; i--) {
+      shipBullets[i].x += shipBullets[i].vx * dt; shipBullets[i].y += shipBullets[i].vy * dt;
+      if (shipBullets[i].y < 0 || shipBullets[i].y > H) { shipBullets.splice(i, 1); continue; }
+      for (let j = 0; j < invaders.length; j++) {
+        if (!invaders[j].alive) continue;
+        const inv = invaders[j];
+        if (shipBullets[i] && shipBullets[i].x > inv.x && shipBullets[i].x < inv.x + inv.w && shipBullets[i].y > inv.y && shipBullets[i].y < inv.y + inv.h) {
+          if (!infected[j]) { invaders[j].alive = false; score += 10; sfxHit(); emitParts(inv.x+IW/2,inv.y+IH/2,6,'#FF4444',2,0.4); }
+          shipBullets.splice(i, 1); break;
+        }
+      }
+    }
+
+    checkParasiteInfection();
+    spreadInfection(dt);
+
+    let alive = 0, inf = 0;
+    for (let i = 0; i < invaders.length; i++) { if (invaders[i].alive) { alive++; if (infected[i]) inf++; } }
+    corruption = alive > 0 ? inf / Math.max(alive, 5) : 1;
+    if (corruption > 0.85 || alive === 0) complete = true;
+
+    return false;
+  }
+
+  function checkParasiteInfection() {
+    for (let i = 0; i < invaders.length; i++) {
+      const inv = invaders[i];
+      if (!inv.alive || infected[i]) continue;
+      if (dist(P.x, P.y, inv.x+IW/2, inv.y+IH/2) < P.infectR + 10) {
+        infected[i] = true; P.infected++;
+        emitParts(inv.x+IW/2, inv.y+IH/2, 8, COL.para, 2, 0.6); sfxInfect();
+      }
+    }
+    if (!ship.inf && dist(P.x, P.y, ship.x+ship.w/2, ship.y+ship.h/2) < P.infectR + 15) {
+      ship.inf = true; P.infected++; sfxCorrupt();
+      emitParts(ship.x+ship.w/2, ship.y+ship.h/2, 15, COL.inf, 3, 0.8);
+    }
+  }
+
+  function spreadInfection(dt) {
+    if (Math.random() > dt * 3 * (0.3 + corruption)) return;
+    for (let i = 0; i < invaders.length; i++) {
+      if (!infected[i] || !invaders[i].alive) continue;
+      for (let j = 0; j < invaders.length; j++) {
+        if (infected[j] || !invaders[j].alive) continue;
+        if (dist(invaders[i].x, invaders[i].y, invaders[j].x, invaders[j].y) < 60 && Math.random() < 0.12) {
+          infected[j] = true;
+          emitParts(invaders[j].x+IW/2, invaders[j].y+IH/2, 4, COL.inf, 1.5, 0.3);
+        }
+      }
+    }
+  }
+
+  function drawInvader(ctx, x, y, w, h, infected, time) {
+    if (infected) {
+      const fl = Math.sin(time * 12 + x) * 0.2 + 0.8;
+      ctx.globalAlpha = fl;
+      ctx.fillStyle = Math.random() < 0.1 ? COL.inf : COL.para;
+      ctx.shadowBlur = 6; ctx.shadowColor = COL.para;
+    } else {
+      ctx.fillStyle = '#44FF88';
+    }
+    ctx.fillRect(x + 4, y, w - 8, h);
+    ctx.fillRect(x, y + 4, w, h - 8);
+    ctx.fillRect(x + 2, y + 2, 4, 4);
+    ctx.fillRect(x + w - 6, y + 2, 4, 4);
+    ctx.fillStyle = infected ? '#000' : '#0A0A1A';
+    ctx.fillRect(x + 8, y + 6, 4, 4);
+    ctx.fillRect(x + w - 12, y + 6, 4, 4);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  function draw(ctx) {
+    ctx.fillStyle = '#0A0A1A'; ctx.fillRect(0, 0, W, H);
+
+    if (introT > 0) {
+      const a = clamp(1 - introT / 2, 0, 1);
+      ctx.globalAlpha = a;
+      glitchText(ctx, 'STAGE 3', W/2, H/2 - 30, 40, COL.white, 0.5);
+      glitchText(ctx, '— INVADERS —', W/2, H/2 + 20, 24, COL.cyan, 0.3);
+      drawText(ctx, 'turn them against each other', W/2, H/2 + 60, 14, '#666');
+      ctx.globalAlpha = 1; drawCRT(ctx); return;
+    }
+
+    for (let i = 0; i < invaders.length; i++) {
+      if (!invaders[i].alive) continue;
+      drawInvader(ctx, invaders[i].x, invaders[i].y, invaders[i].w, invaders[i].h, infected[i], P.time);
+    }
+
+    for (const b of bullets) {
+      ctx.fillStyle = b.inf ? COL.para : '#FF4444';
+      if (b.inf) { ctx.shadowBlur = 4; ctx.shadowColor = COL.para; }
+      ctx.fillRect(b.x - 2, b.y - 4, 4, 8);
+      ctx.shadowBlur = 0;
+    }
+    for (const b of shipBullets) {
+      ctx.fillStyle = ship.inf ? COL.inf : '#FFFF44';
+      ctx.fillRect(b.x - 1, b.y - 5, 2, 10);
+    }
+
+    if (ship.inf) { ctx.fillStyle = COL.inf; ctx.shadowBlur = 6; ctx.shadowColor = COL.inf; }
+    else { ctx.fillStyle = '#CCCCCC'; }
+    ctx.fillRect(ship.x, ship.y, ship.w, ship.h);
+    ctx.fillRect(ship.x + ship.w/2 - 4, ship.y - 6, 8, 6);
+    ctx.shadowBlur = 0;
+
+    drawText(ctx, `SCORE ${score}`, W/2, 30, 16, '#888');
+
+    const barX = W - 40, barY = 60, barW = 12, barH = H - 120;
+    ctx.fillStyle = '#111'; ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = COL.para; ctx.fillRect(barX, barY + barH * (1-corruption), barW, barH * corruption);
+    drawText(ctx, `${(corruption*100)|0}%`, barX + 6, barY - 14, 11, COL.para);
+
+    P.draw(ctx);
+    drawParts(ctx);
+    glitch(ctx, corruption * 0.9);
+    drawCRT(ctx);
+
+    if (complete && outroT > 0) {
+      const a = clamp(outroT / 2, 0, 1);
+      ctx.fillStyle = `rgba(0,0,0,${a * 0.7})`; ctx.fillRect(0, 0, W, H);
+      glitch(ctx, 0.6 + outroT * 0.4);
+      if (outroT > 1) {
+        glitchText(ctx, 'TOTAL CHAOS', W/2, H/2 - 10, 36, COL.red, outroT * 0.4);
+        ctx.globalAlpha = clamp(outroT - 1.5, 0, 1);
+        drawText(ctx, 'they never stood a chance.', W/2, H/2 + 35, 16, COL.para);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  return { init, update, draw, getCorruption: () => corruption };
+})();
+
+// ════════════════════════════════════════
+//  FINAL STAGE — SYSTEM CORRUPTION
+// ════════════════════════════════════════
+const Final = (() => {
+  let menuItems, infected, corruption, complete, timer, outroT;
+  let fakeErrors, codeLines;
+
+  function init() {
+    menuItems = [
+      { text: 'TETRIS', x: W/2, y: 180, size: 28 },
+      { text: 'BREAKOUT', x: W/2, y: 240, size: 28 },
+      { text: 'INVADERS', x: W/2, y: 300, size: 28 },
+      { text: 'OPTIONS', x: W/2, y: 370, size: 22 },
+      { text: 'CREDITS', x: W/2, y: 420, size: 22 },
+      { text: 'EXIT GAME', x: W/2, y: 480, size: 22 },
+    ];
+    infected = menuItems.map(() => false);
+    fakeErrors = [];
+    codeLines = [];
+    corruption = 0; complete = false; timer = 0; outroT = 0;
+    P.reset(W/2, H - 80);
+  }
+
+  function update(dt) {
+    timer += dt;
+    if (complete) { outroT += dt; return outroT > 4; }
+
+    for (let i = 0; i < menuItems.length; i++) {
+      if (infected[i]) continue;
+      const m = menuItems[i];
+      if (dist(P.x, P.y, m.x, m.y) < P.infectR + 20) {
+        infected[i] = true; P.infected++;
+        sfxCorrupt();
+        emitParts(m.x, m.y, 15, COL.para, 4, 1);
+        fakeErrors.push({
+          text: ['SEGFAULT','NULL_PTR','STACK_OVERFLOW','HEAP_CORRUPT','FATAL_ERROR','MEMORY_LEAK'][randInt(0,5)],
+          x: rand(50, W-50), y: rand(50, H-50), life: 3
+        });
+      }
+    }
+
+    if (corruption > 0.3 && Math.random() < dt * 2) {
+      codeLines.push({
+        text: ['while(true) destroy();','free(reality);','rm -rf /game/*','seg.fault at 0x'+randInt(1000,9999).toString(16),
+               'PANIC: kernel trap','buffer overflow detected','corruption.spread(ALL);'][randInt(0,6)],
+        x: rand(20, W-100), y: -20, speed: rand(30, 80), alpha: 1
+      });
+    }
+
+    for (let i = codeLines.length - 1; i >= 0; i--) {
+      codeLines[i].y += codeLines[i].speed * dt;
+      if (codeLines[i].y > H + 20) codeLines.splice(i, 1);
+    }
+    for (let i = fakeErrors.length - 1; i >= 0; i--) {
+      fakeErrors[i].life -= dt;
+      if (fakeErrors[i].life <= 0) fakeErrors.splice(i, 1);
+    }
+
+    const inf = infected.filter(Boolean).length;
+    corruption = inf / menuItems.length;
+    if (corruption >= 1) complete = true;
+
+    return false;
+  }
+
+  function draw(ctx) {
+    ctx.fillStyle = '#0A0A1A'; ctx.fillRect(0, 0, W, H);
+
+    for (const cl of codeLines) {
+      ctx.globalAlpha = 0.15;
+      drawText(ctx, cl.text, cl.x, cl.y, 12, COL.para, 'left');
+    }
+    ctx.globalAlpha = 1;
+
+    glitchText(ctx, '— GAME SELECT —', W/2, 80, 32, corruption > 0.5 ? COL.red : COL.white, corruption * 0.5);
+
+    for (let i = 0; i < menuItems.length; i++) {
+      const m = menuItems[i];
+      if (infected[i]) {
+        const jx = (Math.random()-0.5) * corruption * 20;
+        const jy = (Math.random()-0.5) * corruption * 10;
+        const garbled = m.text.split('').map(c => Math.random() < corruption * 0.5 ? String.fromCharCode(33+randInt(0,93)) : c).join('');
+        glitchText(ctx, garbled, m.x + jx, m.y + jy, m.size, COL.para, corruption);
+      } else {
+        drawText(ctx, m.text, m.x, m.y, m.size, '#AAAAAA');
+      }
+    }
+
+    for (const e of fakeErrors) {
+      ctx.globalAlpha = clamp(e.life, 0, 1);
+      ctx.fillStyle = 'rgba(255,0,0,0.1)';
+      const tw = e.text.length * 10 + 20;
+      ctx.fillRect(e.x - tw/2, e.y - 15, tw, 30);
+      ctx.strokeStyle = COL.red; ctx.lineWidth = 1;
+      ctx.strokeRect(e.x - tw/2, e.y - 15, tw, 30);
+      drawText(ctx, e.text, e.x, e.y, 14, COL.red);
+    }
+    ctx.globalAlpha = 1;
+
+    P.draw(ctx);
+    drawParts(ctx);
+    glitch(ctx, corruption);
+    drawCRT(ctx);
+
+    if (complete && outroT > 0) {
+      const a = clamp(outroT / 2, 0, 1);
+      ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H);
+      glitch(ctx, Math.min(outroT * 0.5, 1));
+    }
+  }
+
+  return { init, update, draw, getCorruption: () => corruption };
+})();
+
+// ════════════════════════════════════════
+//  TITLE SCREEN
+// ════════════════════════════════════════
+const Title = (() => {
+  let timer = 0;
+  let floats = [];
+  for (let i = 0; i < 60; i++) {
+    floats.push({ x: rand(0, W), y: rand(0, H), size: rand(1, 3), speed: rand(10, 40), phase: rand(0, Math.PI*2) });
+  }
+
+  function update(dt) {
+    timer += dt;
+    for (const f of floats) { f.y -= f.speed * dt; if (f.y < -10) f.y = H + 10; }
+    return anyKeyPressed && timer > 0.5;
+  }
+
+  function draw(ctx) {
+    ctx.fillStyle = '#050508'; ctx.fillRect(0, 0, W, H);
+
+    for (const f of floats) {
+      const a = (Math.sin(timer * 2 + f.phase) * 0.3 + 0.5) * 0.4;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = COL.para;
+      ctx.fillRect(f.x | 0, f.y | 0, f.size, f.size);
+    }
+    ctx.globalAlpha = 1;
+
+    const titleY = H / 2 - 40;
+    const glitchI = Math.sin(timer * 3) * 0.2 + 0.3;
+
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = 0.15;
+      const ox = (Math.random()-0.5) * glitchI * 12;
+      const oy = (Math.random()-0.5) * glitchI * 4;
+      drawText(ctx, 'P A R A S I T E', W/2 + ox, titleY + oy, 56, i === 0 ? COL.red : i === 1 ? COL.cyan : COL.inf);
+    }
+    ctx.globalAlpha = 1;
+
+    if (Math.random() < 0.05) {
+      ctx.globalAlpha = 0.8;
+      drawText(ctx, 'P A R A S I T E', W/2 + rand(-5,5), titleY + rand(-2,2), 56, COL.para);
+    }
+    ctx.globalAlpha = 1;
+    drawText(ctx, 'P A R A S I T E', W/2, titleY, 56, COL.para);
+
+    ctx.shadowBlur = 20; ctx.shadowColor = COL.para;
+    drawText(ctx, 'P A R A S I T E', W/2, titleY, 56, COL.para);
+    ctx.shadowBlur = 0;
+
+    const sub = Math.sin(timer * 2) > 0 || timer < 1;
+    if (sub) {
+      ctx.globalAlpha = 0.7 + Math.sin(timer * 3) * 0.3;
+      drawText(ctx, 'PRESS ANY KEY TO INFECT', W/2, titleY + 70, 16, '#888');
+      ctx.globalAlpha = 1;
+    }
+
+    drawText(ctx, '"You are the bug."', W/2, titleY + 120, 14, '#444');
+
+    drawText(ctx, 'WASD / Arrows — Move', W/2, H - 80, 12, '#333');
+    drawText(ctx, 'SPACE — Dash', W/2, H - 60, 12, '#333');
+
+    glitch(ctx, 0.05 + Math.sin(timer) * 0.03);
+    drawCRT(ctx);
+  }
+
+  return { update, draw, reset() { timer = 0; anyKeyPressed = false; } };
+})();
+
+// ════════════════════════════════════════
+//  ENDING SCREEN
+// ════════════════════════════════════════
+const Ending = (() => {
+  let timer = 0;
+  let glitchPieces = [];
+
+  function init() {
+    timer = 0;
+    glitchPieces = [];
+    for (let i = 0; i < 40; i++) {
+      glitchPieces.push({
+        x: rand(0, W), y: rand(0, H),
+        w: rand(10, 80), h: rand(5, 30),
+        color: [COL.para, COL.inf, COL.red, COL.cyan][randInt(0,3)],
+        speed: rand(-50, 50), drift: rand(-30, 30),
+        alpha: rand(0.05, 0.2)
+      });
+    }
+    sfxBass();
+  }
+
+  function update(dt) {
+    timer += dt;
+    for (const p of glitchPieces) {
+      p.x += p.drift * dt; p.y += p.speed * dt;
+      if (p.y > H) p.y = -p.h;
+      if (p.y < -p.h) p.y = H;
+    }
+    return false;
+  }
+
+  function draw(ctx) {
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+
+    for (const p of glitchPieces) {
+      ctx.globalAlpha = p.alpha * Math.min(timer * 0.5, 1);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x | 0, p.y | 0, p.w, p.h);
+    }
+    ctx.globalAlpha = 1;
+
+    if (timer > 1) {
+      const reveal = clamp((timer - 1) / 2, 0, 1);
+      const mainY = H / 2 - 20;
+
+      ctx.globalAlpha = reveal;
+      ctx.shadowBlur = 30; ctx.shadowColor = COL.para;
+      const glI = 0.2 + Math.sin(timer * 4) * 0.1;
+      glitchText(ctx, 'YOU ARE THE BUG', W/2, mainY, 48, COL.para, glI);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    if (timer > 3.5) {
+      ctx.globalAlpha = clamp((timer - 3.5) / 2, 0, 0.6);
+      drawText(ctx, `Total infected: ${P.infected}`, W/2, H/2 + 50, 16, '#888');
+      drawText(ctx, '— PARASITE —', W/2, H/2 + 90, 14, '#444');
+      ctx.globalAlpha = 1;
+    }
+
+    if (timer > 6) {
+      ctx.globalAlpha = clamp((timer - 6) / 2, 0, 0.5);
+      const blink = Math.sin(timer * 3) > 0;
+      if (blink) drawText(ctx, 'PRESS SPACE TO RESTART', W/2, H - 60, 14, '#666');
+      ctx.globalAlpha = 1;
+      if (keys['Space']) { game.restart(); }
+    }
+
+    glitch(ctx, 0.15 + Math.sin(timer * 2) * 0.05);
+    drawCRT(ctx);
+  }
+
+  return { init, update, draw };
+})();
+
+// ════════════════════════════════════════
+//  TRANSITION EFFECT
+// ════════════════════════════════════════
+const Transition = (() => {
+  let timer, duration, callback;
+  let active = false;
+
+  function start(dur, cb) {
+    timer = 0; duration = dur; callback = cb; active = true;
+    sfxBass();
+  }
+
+  function update(dt) {
+    if (!active) return;
+    timer += dt;
+    if (timer >= duration) { active = false; if (callback) callback(); }
+  }
+
+  function draw(ctx) {
+    if (!active) return;
+    const t = timer / duration;
+    const intensity = t < 0.5 ? t * 2 : (1 - t) * 2;
+
+    ctx.fillStyle = `rgba(0,0,0,${intensity})`; ctx.fillRect(0, 0, W, H);
+    glitch(ctx, intensity * 0.8);
+
+    if (t > 0.3 && t < 0.7) {
+      const barH = 4;
+      for (let i = 0; i < 15; i++) {
+        ctx.fillStyle = [COL.para, COL.inf, COL.red][i % 3];
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(0, rand(0, H), W, barH);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  return { start, update, draw, isActive: () => active };
+})();
+
+// ════════════════════════════════════════
+//  GAME STATE MACHINE
+// ════════════════════════════════════════
+const game = {
+  state: 'title',
+  stages: [Tetris, Breakout, Invaders, Final],
+  stageIdx: -1,
+  stageReady: false,
+
+  restart() {
+    this.state = 'title';
+    this.stageIdx = -1;
+    this.stageReady = false;
+    P.infected = 0; P.size = 5; P.speed = 160; P.infectR = 22;
+    P.visible = false; P.trail = [];
+    parts.length = 0;
+    Title.reset();
+    anyKeyPressed = false;
+  },
+
+  startStage(idx) {
+    this.stageIdx = idx;
+    this.state = 'playing';
+    this.stageReady = true;
+    if (idx < this.stages.length) {
+      this.stages[idx].init();
+    }
+  },
+
+  nextStage() {
+    const next = this.stageIdx + 1;
+    if (next < this.stages.length) {
+      Transition.start(2, () => this.startStage(next));
+      this.state = 'transition';
+    } else {
+      Transition.start(2.5, () => { this.state = 'ending'; Ending.init(); });
+      this.state = 'transition';
+    }
+  },
+
+  update(dt) {
+    updateParts(dt);
+
+    switch (this.state) {
+      case 'title':
+        if (Title.update(dt)) {
+          this.startStage(0);
+          Transition.start(1.5, null);
+          this.state = 'transition';
+        }
+        break;
+      case 'playing':
+        P.update(dt);
+        if (this.stages[this.stageIdx].update(dt)) this.nextStage();
+        break;
+      case 'transition':
+        Transition.update(dt);
+        if (!Transition.isActive() && this.state === 'transition') this.state = 'playing';
+        break;
+      case 'ending':
+        Ending.update(dt);
+        break;
+    }
+  },
+
+  draw(ctx) {
+    switch (this.state) {
+      case 'title': Title.draw(ctx); break;
+      case 'playing': this.stages[this.stageIdx].draw(ctx); break;
+      case 'transition':
+        if (this.stageReady && this.stageIdx >= 0) {
+          this.stages[this.stageIdx].draw(ctx);
+        } else {
+          ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
+        }
+        Transition.draw(ctx);
+        break;
+      case 'ending': Ending.draw(ctx); break;
+    }
+  }
+};
+
+// ════════════════════════════════════════
+//  MAIN LOOP
+// ════════════════════════════════════════
+let lastTime = 0;
+function loop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+
+  try {
+    game.update(dt);
+    game.draw(X);
+  } catch (e) {
+    console.error('Loop error:', e);
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

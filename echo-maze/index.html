@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECHO - 보이지 않는 미로</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Courier New', monospace;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+// ============================================================
+//  ECHO - 보이지 않는 미로
+// ============================================================
+
+// --- Constants ---
+const TILE = 40;
+const CELL_SIZE = 4;
+const WAVE_SPEED = 220;
+const WAVE_MAX_RADIUS = 520;
+const WAVE_LINE_WIDTH = 2;
+const PLAYER_SPEED = 160;
+const PLAYER_RADIUS = 7;
+const OPACITY_DECAY = 0.4;
+const WAVE_TOUCH_HALF = 6;
+const DEBUG_VISIBLE = false;
+
+// 0=empty, 1=wall, 2=exit, 3=start, 4=trap
+const LEVELS = [
+  // --- Level 1: Tutorial ---
+  [
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,1,0,0,0,0,0,1],
+    [1,0,1,1,0,1,0,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,0,1,0,1],
+    [1,0,1,0,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,0,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+  ],
+  // --- Level 2: First traps ---
+  [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,4,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,0,1,1,1,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,4,0,0,0,0,1,0,1],
+    [1,0,1,1,1,0,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  ],
+  // --- Level 3: Narrow corridors ---
+  [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,1,0,0,0,0,1,0,0,0,0,0,0,1],
+    [1,0,0,1,0,1,1,0,1,0,1,1,1,1,0,1],
+    [1,1,0,1,0,4,1,0,0,0,0,0,4,1,0,1],
+    [1,0,0,0,0,1,1,1,1,1,1,0,1,1,0,1],
+    [1,0,1,1,0,0,0,0,0,0,1,0,0,0,0,1],
+    [1,0,0,1,1,1,1,1,1,0,1,1,1,1,0,1],
+    [1,1,0,0,0,0,4,0,1,0,0,0,0,1,0,1],
+    [1,0,0,1,1,1,1,0,1,1,1,1,0,1,0,1],
+    [1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,1,1,1,1,1,0,1,1,1,0,1],
+    [1,1,1,1,0,0,0,0,0,1,0,0,0,0,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  ],
+  // --- Level 4: Deception ---
+  [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
+    [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
+    [1,0,0,0,1,0,0,0,4,0,1,0,0,0,4,1,0,1],
+    [1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,1,1,0,1,0,1,1,1,0,1,1,1,1],
+    [1,0,0,0,0,4,1,0,0,0,1,0,0,0,0,0,0,1],
+    [1,1,1,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,1,0,1,0,4,0,0,1,0,1],
+    [1,0,1,0,1,1,1,0,1,0,1,1,1,1,0,1,0,1],
+    [1,0,1,0,0,0,1,0,0,0,0,0,0,0,0,1,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  ],
+  // --- Level 5: The Gauntlet ---
+  [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,3,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1],
+    [1,0,1,1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,4,0,0,1,0,0,0,0,4,0,1,0,1],
+    [1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,4,0,1,0,0,0,4,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1],
+    [1,0,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1],
+    [1,0,4,0,1,0,0,0,1,0,0,0,0,4,0,0,0,0,0,1],
+    [1,1,1,0,1,1,1,0,1,1,1,1,1,0,1,1,1,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,4,0,1,0,1,0,0,0,0,1],
+    [1,0,1,1,1,0,1,1,1,1,1,0,1,0,1,0,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  ],
+];
+
+// --- Audio Context (lazy init) ---
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playSonarPing() {
+  const ctx = ensureAudio();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.6);
+  gain.gain.setValueAtTime(0.18, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.6);
+}
+
+function playDeathSound() {
+  const ctx = ensureAudio();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(180, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.5);
+  gain.gain.setValueAtTime(0.25, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.5);
+}
+
+function playClearSound() {
+  const ctx = ensureAudio();
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
+    gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + i * 0.12 + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.4);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(ctx.currentTime + i * 0.12);
+    osc.stop(ctx.currentTime + i * 0.12 + 0.4);
+  });
+}
+
+// --- Canvas ---
+const canvas = document.getElementById('gameCanvas');
+const ctx2d = canvas.getContext('2d');
+
+// --- Game State ---
+const game = {
+  state: 'menu',       // menu | playing | death | levelclear | win
+  level: 0,
+  deaths: 0,
+  wavesUsed: 0,
+  transitionTimer: 0,  // seconds remaining in transition
+  deathFlash: 0,
+  screenShake: 0,
+};
+
+let cols, rows;
+let player = { x: 0, y: 0 };
+let waves = [];
+let walls = [];
+let traps = [];
+let exitRect = null;
+let startPos = { x: 0, y: 0 };
+let particles = [];
+const keys = {};
+let lastTime = 0;
+
+// ============================================================
+//  LEVEL LOADING
+// ============================================================
+function loadLevel(index) {
+  const data = LEVELS[index];
+  rows = data.length;
+  cols = data[0].length;
+  canvas.width  = cols * TILE;
+  canvas.height = rows * TILE;
+
+  walls = [];
+  traps = [];
+  exitRect = null;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const val = data[r][c];
+      const x = c * TILE;
+      const y = r * TILE;
+
+      if (val === 1) {
+        walls.push(makeWallTile(x, y));
+      } else if (val === 3) {
+        startPos = { x: x + TILE / 2, y: y + TILE / 2 };
+      } else if (val === 2) {
+        exitRect = makeWallTile(x, y);
+        exitRect.isExit = true;
+      } else if (val === 4) {
+        const trap = makeWallTile(x, y);
+        trap.isTrap = true;
+        traps.push(trap);
+      }
+    }
+  }
+
+  player.x = startPos.x;
+  player.y = startPos.y;
+  waves = [];
+  particles = [];
+}
+
+function makeWallTile(x, y) {
+  const cellCols = Math.ceil(TILE / CELL_SIZE);
+  const cellRows = Math.ceil(TILE / CELL_SIZE);
+  const cells = new Array(cellCols * cellRows);
+  for (let i = 0; i < cells.length; i++) cells[i] = { opacity: 0 };
+  return { x, y, w: TILE, h: TILE, cells, cellCols, cellRows };
+}
+
+// ============================================================
+//  PARTICLES
+// ============================================================
+function spawnParticles(x, y, count, color, speedMin, speedMax, lifeMax) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = speedMin + Math.random() * (speedMax - speedMin);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.3 + Math.random() * lifeMax,
+      maxLife: 0.3 + Math.random() * lifeMax,
+      color,
+      size: 1 + Math.random() * 2,
+    });
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx2d.globalAlpha = alpha;
+    ctx2d.fillStyle = p.color;
+    ctx2d.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx2d.globalAlpha = 1;
+}
+
+// ============================================================
+//  SETUP
+// ============================================================
+function setup() {
+  loadLevel(0);
+  game.state = 'menu';
+  game.level = 0;
+  game.deaths = 0;
+  game.wavesUsed = 0;
+
+  window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    e.preventDefault();
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    e.preventDefault();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.repeat) return;
+
+    if (e.code === 'Space') {
+      if (game.state === 'menu') {
+        game.state = 'playing';
+        ensureAudio();
+        return;
+      }
+      if (game.state === 'win') {
+        game.level = 0;
+        game.deaths = 0;
+        game.wavesUsed = 0;
+        loadLevel(0);
+        game.state = 'menu';
+        return;
+      }
+      if (game.state === 'playing') {
+        waves.push({ cx: player.x, cy: player.y, radius: 0, opacity: 1 });
+        game.wavesUsed++;
+        playSonarPing();
+      }
+    }
+  });
+
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+//  GAME LOOP
+// ============================================================
+function gameLoop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  update(dt);
+  draw();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+//  UPDATE
+// ============================================================
+function update(dt) {
+  updateParticles(dt);
+
+  if (game.state === 'death') {
+    game.deathFlash = Math.max(0, game.deathFlash - dt * 2.5);
+    game.transitionTimer -= dt;
+    if (game.transitionTimer <= 0) {
+      loadLevel(game.level);
+      game.state = 'playing';
+    }
+    return;
+  }
+
+  if (game.state === 'levelclear') {
+    game.transitionTimer -= dt;
+    updateOpacityDecay(dt);
+    updateWaves(dt);
+    if (game.transitionTimer <= 0) {
+      game.level++;
+      if (game.level >= LEVELS.length) {
+        game.state = 'win';
+      } else {
+        loadLevel(game.level);
+        game.state = 'playing';
+      }
+    }
+    return;
+  }
+
+  if (game.state !== 'playing') return;
+
+  updatePlayer(dt);
+  updateWaves(dt);
+  updateOpacityDecay(dt);
+  checkTraps();
+  checkExit();
+}
+
+// --- Player Movement with Wall Collision ---
+function updatePlayer(dt) {
+  let dx = 0, dy = 0;
+  if (keys['ArrowUp']    || keys['KeyW']) dy -= 1;
+  if (keys['ArrowDown']  || keys['KeyS']) dy += 1;
+  if (keys['ArrowLeft']  || keys['KeyA']) dx -= 1;
+  if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
+
+  if (dx === 0 && dy === 0) return;
+
+  const len = Math.sqrt(dx * dx + dy * dy);
+  dx = (dx / len) * PLAYER_SPEED * dt;
+  dy = (dy / len) * PLAYER_SPEED * dt;
+
+  player.x += dx;
+  resolveCollisions();
+  player.y += dy;
+  resolveCollisions();
+}
+
+function resolveCollisions() {
+  const r = PLAYER_RADIUS;
+  for (const wall of walls) {
+    const closestX = Math.max(wall.x, Math.min(player.x, wall.x + wall.w));
+    const closestY = Math.max(wall.y, Math.min(player.y, wall.y + wall.h));
+    const distX = player.x - closestX;
+    const distY = player.y - closestY;
+    const distSq = distX * distX + distY * distY;
+    if (distSq < r * r) {
+      const dist = Math.sqrt(distSq) || 0.001;
+      const overlap = r - dist;
+      player.x += (distX / dist) * overlap;
+      player.y += (distY / dist) * overlap;
+    }
+  }
+}
+
+// --- Waves ---
+function updateWaves(dt) {
+  for (let i = waves.length - 1; i >= 0; i--) {
+    const w = waves[i];
+    w.radius += WAVE_SPEED * dt;
+    w.opacity = 1 - (w.radius / WAVE_MAX_RADIUS);
+
+    if (w.radius >= WAVE_MAX_RADIUS) {
+      waves.splice(i, 1);
+      continue;
+    }
+
+    testWaveCells(w, walls);
+    testWaveCells(w, traps);
+    if (exitRect) testWaveCellsSingle(w, exitRect);
+  }
+}
+
+function testWaveCells(wave, tileList) {
+  const half = WAVE_TOUCH_HALF;
+  const rInner = wave.radius - half;
+  const rOuter = wave.radius + half;
+
+  for (const tile of tileList) {
+    const nearX = Math.max(tile.x, Math.min(wave.cx, tile.x + tile.w));
+    const nearY = Math.max(tile.y, Math.min(wave.cy, tile.y + tile.h));
+    const farX = (wave.cx < tile.x + tile.w / 2) ? tile.x + tile.w : tile.x;
+    const farY = (wave.cy < tile.y + tile.h / 2) ? tile.y + tile.h : tile.y;
+    const nearDist = Math.hypot(wave.cx - nearX, wave.cy - nearY);
+    const farDist  = Math.hypot(wave.cx - farX,  wave.cy - farY);
+
+    if (nearDist > rOuter || farDist < rInner) continue;
+    testWaveCellsSingle(wave, tile);
+  }
+}
+
+function testWaveCellsSingle(wave, tile) {
+  const half = WAVE_TOUCH_HALF;
+  const rInnerSq = (wave.radius - half) ** 2;
+  const rOuterSq = (wave.radius + half) ** 2;
+
+  for (let cr = 0; cr < tile.cellRows; cr++) {
+    for (let cc = 0; cc < tile.cellCols; cc++) {
+      const cellX = tile.x + cc * CELL_SIZE + CELL_SIZE / 2;
+      const cellY = tile.y + cr * CELL_SIZE + CELL_SIZE / 2;
+      const dx = cellX - wave.cx;
+      const dy = cellY - wave.cy;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq >= rInnerSq && distSq <= rOuterSq) {
+        const cell = tile.cells[cr * tile.cellCols + cc];
+        if (cell.opacity < 1) {
+          cell.opacity = 1;
+          // spawn particle at contact point (sparse)
+          if (Math.random() < 0.06) {
+            const color = tile.isTrap ? '#ff4444' : tile.isExit ? '#ffd700' : '#ffffff';
+            spawnParticles(cellX, cellY, 1, color, 10, 40, 0.5);
+          }
+        }
+      }
+    }
+  }
+}
+
+// --- Opacity Decay ---
+function updateOpacityDecay(dt) {
+  const decay = OPACITY_DECAY * dt;
+  decayCells(walls, decay);
+  decayCells(traps, decay);
+  if (exitRect) {
+    for (const cell of exitRect.cells) {
+      if (cell.opacity > 0) {
+        cell.opacity -= decay;
+        if (cell.opacity < 0) cell.opacity = 0;
+      }
+    }
+  }
+}
+
+function decayCells(list, decay) {
+  for (const tile of list) {
+    for (const cell of tile.cells) {
+      if (cell.opacity > 0) {
+        cell.opacity -= decay;
+        if (cell.opacity < 0) cell.opacity = 0;
+      }
+    }
+  }
+}
+
+// --- Trap check ---
+function checkTraps() {
+  for (const trap of traps) {
+    const cx = trap.x + trap.w / 2;
+    const cy = trap.y + trap.h / 2;
+    const dx = player.x - cx;
+    const dy = player.y - cy;
+    const halfW = trap.w / 2 + PLAYER_RADIUS * 0.5;
+    const halfH = trap.h / 2 + PLAYER_RADIUS * 0.5;
+    if (Math.abs(dx) < halfW && Math.abs(dy) < halfH) {
+      triggerDeath();
+      return;
+    }
+  }
+}
+
+function triggerDeath() {
+  game.state = 'death';
+  game.deaths++;
+  game.deathFlash = 1;
+  game.transitionTimer = 1.2;
+  game.screenShake = 0.4;
+  playDeathSound();
+  spawnParticles(player.x, player.y, 40, '#ff0000', 50, 200, 0.8);
+  spawnParticles(player.x, player.y, 20, '#ff4444', 30, 120, 0.6);
+}
+
+// --- Exit check ---
+function checkExit() {
+  if (!exitRect) return;
+  const ex = exitRect.x + exitRect.w / 2;
+  const ey = exitRect.y + exitRect.h / 2;
+  const dist = Math.hypot(player.x - ex, player.y - ey);
+  if (dist < TILE * 0.6) {
+    game.state = 'levelclear';
+    game.transitionTimer = 2.0;
+    playClearSound();
+    spawnParticles(player.x, player.y, 60, '#ffd700', 40, 180, 1.2);
+    spawnParticles(player.x, player.y, 30, '#00ffff', 60, 220, 1.0);
+
+    // reveal burst
+    waves.push({ cx: player.x, cy: player.y, radius: 0, opacity: 1 });
+  }
+}
+
+// ============================================================
+//  DRAW
+// ============================================================
+function draw() {
+  // screen shake offset
+  let shakeX = 0, shakeY = 0;
+  if (game.screenShake > 0) {
+    shakeX = (Math.random() - 0.5) * game.screenShake * 16;
+    shakeY = (Math.random() - 0.5) * game.screenShake * 16;
+    game.screenShake *= 0.9;
+    if (game.screenShake < 0.01) game.screenShake = 0;
+  }
+
+  ctx2d.save();
+  ctx2d.translate(shakeX, shakeY);
+
+  ctx2d.fillStyle = '#000';
+  ctx2d.fillRect(-10, -10, canvas.width + 20, canvas.height + 20);
+
+  if (game.state === 'menu') {
+    drawMenuScreen();
+  } else if (game.state === 'win') {
+    drawWinScreen();
+  } else {
+    drawWalls();
+    drawTraps();
+    drawExit();
+    drawWaves();
+    drawParticles();
+    drawPlayer();
+    drawHUD();
+
+    if (game.state === 'death') drawDeathOverlay();
+    if (game.state === 'levelclear') drawClearOverlay();
+    if (DEBUG_VISIBLE) drawDebugOverlay();
+  }
+
+  ctx2d.restore();
+}
+
+// --- Wall cells ---
+function drawWalls() {
+  for (const wall of walls) {
+    drawTileCells(wall, 255, 255, 255);
+  }
+}
+
+// --- Trap cells (red) ---
+function drawTraps() {
+  for (const trap of traps) {
+    drawTileCells(trap, 255, 50, 50);
+  }
+}
+
+// --- Exit cells (gold) ---
+function drawExit() {
+  if (!exitRect) return;
+  drawTileCells(exitRect, 255, 215, 0);
+
+  // pulsing glow hint for revealed exit
+  let maxOp = 0;
+  for (const cell of exitRect.cells) if (cell.opacity > maxOp) maxOp = cell.opacity;
+  if (maxOp > 0.1) {
+    const pulse = 0.3 + 0.2 * Math.sin(performance.now() / 200);
+    ctx2d.save();
+    ctx2d.shadowBlur = 20;
+    ctx2d.shadowColor = `rgba(255,215,0,${(maxOp * pulse).toFixed(3)})`;
+    ctx2d.fillStyle = `rgba(255,215,0,${(maxOp * 0.08).toFixed(3)})`;
+    ctx2d.fillRect(exitRect.x, exitRect.y, exitRect.w, exitRect.h);
+    ctx2d.restore();
+  }
+}
+
+function drawTileCells(tile, r, g, b) {
+  for (let cr = 0; cr < tile.cellRows; cr++) {
+    for (let cc = 0; cc < tile.cellCols; cc++) {
+      const cell = tile.cells[cr * tile.cellCols + cc];
+      if (cell.opacity <= 0) continue;
+      ctx2d.fillStyle = `rgba(${r},${g},${b},${cell.opacity.toFixed(3)})`;
+      ctx2d.fillRect(
+        tile.x + cc * CELL_SIZE,
+        tile.y + cr * CELL_SIZE,
+        CELL_SIZE, CELL_SIZE
+      );
+    }
+  }
+}
+
+// --- Sonar waves ---
+function drawWaves() {
+  ctx2d.save();
+  ctx2d.shadowBlur = 15;
+  ctx2d.shadowColor = 'cyan';
+
+  for (const w of waves) {
+    if (w.opacity <= 0) continue;
+
+    // outer glow ring
+    ctx2d.beginPath();
+    ctx2d.arc(w.cx, w.cy, w.radius, 0, Math.PI * 2);
+    ctx2d.strokeStyle = `rgba(0,255,255,${(w.opacity * 0.3).toFixed(3)})`;
+    ctx2d.lineWidth = WAVE_LINE_WIDTH + 4;
+    ctx2d.stroke();
+
+    // core ring
+    ctx2d.beginPath();
+    ctx2d.arc(w.cx, w.cy, w.radius, 0, Math.PI * 2);
+    ctx2d.strokeStyle = `rgba(0,255,255,${w.opacity.toFixed(3)})`;
+    ctx2d.lineWidth = WAVE_LINE_WIDTH;
+    ctx2d.stroke();
+  }
+  ctx2d.restore();
+}
+
+// --- Player ---
+function drawPlayer() {
+  if (game.state === 'death') return;
+  const t = performance.now() / 300;
+  const pulse = 1 + 0.2 * Math.sin(t);
+
+  ctx2d.save();
+
+  // outer glow aura
+  const glowR = 14 * pulse;
+  const grad = ctx2d.createRadialGradient(player.x, player.y, 0, player.x, player.y, glowR);
+  grad.addColorStop(0, 'rgba(0,255,255,0.18)');
+  grad.addColorStop(0.5, 'rgba(0,255,255,0.06)');
+  grad.addColorStop(1, 'rgba(0,255,255,0)');
+  ctx2d.fillStyle = grad;
+  ctx2d.beginPath();
+  ctx2d.arc(player.x, player.y, glowR, 0, Math.PI * 2);
+  ctx2d.fill();
+
+  // core dot
+  ctx2d.shadowBlur = 18;
+  ctx2d.shadowColor = 'rgba(0,255,255,0.8)';
+  ctx2d.beginPath();
+  ctx2d.arc(player.x, player.y, 4 * pulse, 0, Math.PI * 2);
+  ctx2d.fillStyle = 'rgba(0,255,255,0.7)';
+  ctx2d.fill();
+
+  // bright center
+  ctx2d.beginPath();
+  ctx2d.arc(player.x, player.y, 1.8, 0, Math.PI * 2);
+  ctx2d.fillStyle = 'rgba(200,255,255,0.9)';
+  ctx2d.fill();
+
+  ctx2d.restore();
+}
+
+// --- HUD ---
+function drawHUD() {
+  ctx2d.save();
+  ctx2d.fillStyle = 'rgba(0,255,255,0.5)';
+  ctx2d.font = '12px "Courier New", monospace';
+  ctx2d.textAlign = 'left';
+  ctx2d.fillText(`LEVEL ${game.level + 1}/${LEVELS.length}`, 10, 18);
+  ctx2d.textAlign = 'right';
+  ctx2d.fillText(`ECHO x${game.wavesUsed}`, canvas.width - 10, 18);
+  ctx2d.restore();
+}
+
+// --- Death flash overlay ---
+function drawDeathOverlay() {
+  if (game.deathFlash > 0) {
+    ctx2d.fillStyle = `rgba(180,0,0,${(game.deathFlash * 0.6).toFixed(3)})`;
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+// --- Level clear overlay ---
+function drawClearOverlay() {
+  const progress = 1 - (game.transitionTimer / 2.0);
+  const alpha = Math.min(1, progress * 1.5);
+
+  ctx2d.save();
+  ctx2d.fillStyle = `rgba(0,0,0,${(alpha * 0.5).toFixed(3)})`;
+  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx2d.textAlign = 'center';
+  ctx2d.textBaseline = 'middle';
+  ctx2d.shadowBlur = 20;
+  ctx2d.shadowColor = 'cyan';
+
+  ctx2d.fillStyle = `rgba(0,255,255,${alpha.toFixed(3)})`;
+  ctx2d.font = 'bold 28px "Courier New", monospace';
+
+  if (game.level + 1 >= LEVELS.length) {
+    ctx2d.fillText('MAZE CLEARED', canvas.width / 2, canvas.height / 2);
+  } else {
+    ctx2d.fillText(`LEVEL ${game.level + 1} CLEAR`, canvas.width / 2, canvas.height / 2);
+  }
+
+  ctx2d.restore();
+}
+
+// --- Menu screen ---
+function drawMenuScreen() {
+  canvas.width = 20 * TILE;
+  canvas.height = 15 * TILE;
+
+  ctx2d.fillStyle = '#000';
+  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const t = performance.now() / 1000;
+
+  // animated sonar rings in background
+  ctx2d.save();
+  ctx2d.shadowBlur = 15;
+  ctx2d.shadowColor = 'cyan';
+  for (let i = 0; i < 4; i++) {
+    const r = ((t * 60 + i * 120) % 400);
+    const alpha = 1 - r / 400;
+    ctx2d.beginPath();
+    ctx2d.arc(cx, cy + 40, r, 0, Math.PI * 2);
+    ctx2d.strokeStyle = `rgba(0,255,255,${(alpha * 0.15).toFixed(3)})`;
+    ctx2d.lineWidth = 1.5;
+    ctx2d.stroke();
+  }
+  ctx2d.restore();
+
+  // title
+  ctx2d.save();
+  ctx2d.textAlign = 'center';
+  ctx2d.textBaseline = 'middle';
+  ctx2d.shadowBlur = 30;
+  ctx2d.shadowColor = 'cyan';
+
+  ctx2d.fillStyle = '#0ff';
+  ctx2d.font = 'bold 64px "Courier New", monospace';
+  ctx2d.fillText('ECHO', cx, cy - 60);
+
+  ctx2d.shadowBlur = 10;
+  ctx2d.fillStyle = 'rgba(0,255,255,0.5)';
+  ctx2d.font = '16px "Courier New", monospace';
+  ctx2d.fillText('THE  INVISIBLE  MAZE', cx, cy - 15);
+
+  // blink prompt
+  const blink = Math.sin(t * 3) > 0;
+  if (blink) {
+    ctx2d.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx2d.font = '14px "Courier New", monospace';
+    ctx2d.fillText('[ PRESS  SPACE  TO  START ]', cx, cy + 60);
+  }
+
+  // controls
+  ctx2d.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx2d.font = '11px "Courier New", monospace';
+  ctx2d.fillText('WASD / ARROWS  =  MOVE    |    SPACE  =  SONAR', cx, cy + 120);
+  ctx2d.fillText('USE  SONAR  TO  REVEAL  WALLS  AND  FIND  THE  EXIT', cx, cy + 140);
+
+  ctx2d.restore();
+}
+
+// --- Win screen ---
+function drawWinScreen() {
+  canvas.width = 20 * TILE;
+  canvas.height = 15 * TILE;
+
+  ctx2d.fillStyle = '#000';
+  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const t = performance.now() / 1000;
+
+  // particle shower
+  ctx2d.save();
+  for (let i = 0; i < 60; i++) {
+    const px = (Math.sin(i * 7.3 + t * 0.5) * 0.5 + 0.5) * canvas.width;
+    const py = ((i * 37.7 + t * 40) % canvas.height);
+    const alpha = 0.1 + 0.2 * Math.sin(i + t);
+    ctx2d.fillStyle = i % 3 === 0 ? `rgba(255,215,0,${alpha})` : `rgba(0,255,255,${alpha})`;
+    ctx2d.fillRect(px, py, 2, 2);
+  }
+  ctx2d.restore();
+
+  ctx2d.save();
+  ctx2d.textAlign = 'center';
+  ctx2d.textBaseline = 'middle';
+  ctx2d.shadowBlur = 30;
+  ctx2d.shadowColor = '#ffd700';
+
+  ctx2d.fillStyle = '#ffd700';
+  ctx2d.font = 'bold 48px "Courier New", monospace';
+  ctx2d.fillText('ESCAPED', cx, cy - 50);
+
+  ctx2d.shadowBlur = 10;
+  ctx2d.shadowColor = 'cyan';
+  ctx2d.fillStyle = 'rgba(0,255,255,0.7)';
+  ctx2d.font = '16px "Courier New", monospace';
+  ctx2d.fillText('YOU  FOUND  YOUR  WAY  THROUGH  THE  DARKNESS', cx, cy);
+
+  ctx2d.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx2d.font = '13px "Courier New", monospace';
+  ctx2d.fillText(`ECHOES  USED: ${game.wavesUsed}    |    DEATHS: ${game.deaths}`, cx, cy + 40);
+
+  const blink = Math.sin(t * 3) > 0;
+  if (blink) {
+    ctx2d.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx2d.font = '12px "Courier New", monospace';
+    ctx2d.fillText('[ PRESS  SPACE  TO  RESTART ]', cx, cy + 90);
+  }
+
+  ctx2d.restore();
+}
+
+// --- Debug overlay ---
+function drawDebugOverlay() {
+  ctx2d.strokeStyle = 'rgba(255,0,0,0.3)';
+  ctx2d.lineWidth = 1;
+  for (const wall of walls) ctx2d.strokeRect(wall.x, wall.y, wall.w, wall.h);
+  ctx2d.strokeStyle = 'rgba(255,100,100,0.5)';
+  for (const trap of traps) ctx2d.strokeRect(trap.x, trap.y, trap.w, trap.h);
+  if (exitRect) {
+    ctx2d.strokeStyle = 'rgba(255,215,0,0.5)';
+    ctx2d.strokeRect(exitRect.x, exitRect.y, exitRect.w, exitRect.h);
+  }
+  ctx2d.beginPath();
+  ctx2d.arc(player.x, player.y, PLAYER_RADIUS, 0, Math.PI * 2);
+  ctx2d.strokeStyle = 'rgba(0,255,0,0.5)';
+  ctx2d.stroke();
+}
+
+// ============================================================
+//  START
+// ============================================================
+setup();
+</script>
+</body>
+</html>
